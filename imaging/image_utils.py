@@ -124,7 +124,7 @@ def segmentation_threshold_minimum_steps(image, structuring_element_dilation=squ
 
 def segmentation_threshold_otsu_steps(image, structuring_element_dilation=square(2), structuring_element_erosion=square(2), n_dilation=1, n_erosion=1, area_thresh=None):
     """Otsu’s method calculates an “optimal” threshold (marked by a red line in the histogram below)
-    by maximizing the variance between two classes of pixels, which are separated by the threshold.
+    by maximizing the variance between two mealworm_optical_image of pixels, which are separated by the threshold.
     Equivalently, this threshold minimizes the intra-class variance. Brighter pixels are considered background. Perform a
     morphological closing operation to fill the dark holes, generates labels and remove the labels toching the image border. Finally filter
     out all labels with a pixel area outside the passe range."""
