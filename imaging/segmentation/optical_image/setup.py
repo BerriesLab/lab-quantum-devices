@@ -14,7 +14,7 @@ setuptools.setup(
     description='toolbox for small features segmentation from optical images',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/dabeLab/Lab-Scripts/tree/main/imaging/optical%20images',
+    url='https://github.com/dabeLab/Lab-Scripts/blob/main/imaging/segmentation/optical_image',
     license='dabeLabs',
     packages=['optical_image'],
     install_requires=['requests'],
