@@ -1,5 +1,5 @@
 import os
-from classes import SegmentationWithSAM
+from imaging.classes import SegmentationWithSAM
 
 IMAGE_PATH = r"T:\data raw\photos"
 FILES = [rf"{IMAGE_PATH}\{x}" for x in os.listdir(IMAGE_PATH) if x.endswith(".jpg")]
