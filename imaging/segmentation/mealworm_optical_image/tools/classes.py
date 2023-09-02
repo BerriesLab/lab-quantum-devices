@@ -1,7 +1,7 @@
 import os
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from numpy import unique, zeros, argwhere, uint8, array, histogram, linspace, argmax
+from numpy import unique, zeros, argwhere, uint8, array, cos, sin, tan, pi, histogram, linspace, argmax
 from scipy.interpolate import make_interp_spline
 import pickle
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
@@ -11,7 +11,7 @@ from skimage.color import label2rgb, rgb2gray
 from skimage.segmentation import find_boundaries, clear_border
 from skimage.draw import polygon, polygon2mask
 from skimage.feature import canny
-from skimage.filters import gaussian
+from skimage.transform import hough_line, hough_line_peaks
 import torch
 
 class SegmentationWithSAM:
@@ -44,7 +44,7 @@ class SegmentationWithSAM:
         self.connectivity = 1
         """Parameters for filtering purposes"""
         self.thresh_area = (500, 5000) # segments with area outisde the boundaries are discarded
-        self.thresh_eccentricity = 0.7 # # segments with eccentricity smaller than tresh_eccentricitiy are discarded
+        self.thresh_eccentricity = 0.5 # # segments with eccentricity smaller than tresh_eccentricitiy are discarded
         self.box_safe_margin: int = 5 # For 'filter_box_walls' method: number of pixel to extend the approximate polygon representing the sample box
         """Output"""
         self.labels = None
@@ -269,8 +269,9 @@ class SegmentationWithSAM:
         self.labels = clear_border(self.labels)
         self.segments = self.count_segments()
 
-    def filter_box_walls(self):
-        """Note: the method overwrite the label matrix with a new label, where
+    def filter_box_by_canny(self, sigma:int=1):
+        """This method is meant to be used to remove all labels on the box walls that result from
+        non-homogeneous illumination. Note: the method overwrite the label matrix with a new label, where
         all segments on the box walls are discarded (or set to background value)"""
         gra = rgb2gray(self.image)
         edge_map = canny(gra, sigma=1, low_threshold=0, high_threshold=1, mask=None)
@@ -285,19 +286,21 @@ class SegmentationWithSAM:
         box = polygon2mask(gra.shape, list(zip(box_x, box_y)))
         self.labels[box == 0] = 0
 
-    def filter_box_walls_a_priori(self):
-        """Identify the box floor a priori (i.e. before the segmentation). by finding the grayscale pixel intensity
-        that occurs the most. """
-
-        gra = rgb2gray(self.image)
-        smo = gaussian(gra, sigma=25, preserve_range=True, channel_axis=None)
-        hist = plt.hist(smo.flatten(), range=(0, 1), bins=100, log=False)
-        floor_val = hist[1][argmax(hist[0])]
-
-        mask = smo <= floor_val
-        gra[mask] = 0
-        plt.imshow(gra, cmap="gray")
-        plt.show()
+    def filter_box_by_hough(self, sigma:int=5):
+        """This method is meant to be used to remove all labels outisde the box floor (e.g. on the background).
+        To do that, it finds the grayscale pixel intensity that occurs the most after blurring the image with a large kernel,
+        threshold the image below that value, and discard all labels outiside the thresholded area.
+        Note: the method overwrite the label matrix with a new label, where
+        all segments on the box walls are discarded (or set to background value)"""
+        plt.figure()
+        image_g = rgb2gray(self.image)
+        grad = canny(image_g, sigma=sigma)
+        grad[int(self.image_lx*0.1):int(self.image_lx*0.9), int(self.image_ly*0.1):int(self.image_ly*0.9)] = 0
+        hspace, angles, dists = hough_line(grad)
+        accum, angles, dists = hough_line_peaks(hspace, angles, dists, min_distance=0, min_angle=0, num_peaks=4, threshold=0.1*hspace.max())
+        for angle, dist in zip(angles, dists):
+            (x0, y0) = dist * array([cos(angle), sin(angle)])
+            plt.axline((x0, y0), slope=tan(angle + pi/2), linewidth=2)
 
         #idxs = argwhere(gra == floor_val)
         # box_xmin = min(idxs[:, 0]) #- self.box_safe_margin
