@@ -4,13 +4,58 @@ from skimage.color import label2rgb, rgb2gray
 from imaging.segmentation.mealworm_optical_image.tools.classes import SegmentationWithSAM
 from imaging.segmentation.mealworm_optical_image.tools.image_utils import pixel_stats
 import matplotlib.pyplot as plt
+import pickle
+from skimage.measure import label, regionprops
+from skimage.color import label2rgb, rgb2gray
+import matplotlib.patches as mpatches
+from skimage.segmentation import find_boundaries, clear_border
+from numpy import unique
 
-IMAGE_PATH = 'T:/data raw/optical images/batch01'
-FILES = [f'{IMAGE_PATH}/{x}' for x in os.listdir(IMAGE_PATH) if x.endswith('.jpg') or x.endswith('.png')]
-for FILE in FILES[1:2]:
-    sam = SegmentationWithSAM(FILE) # create object instance
+IMAGE_PATH = 'T:/data processed/optical images/segmentation sam/batch01'
+FILES = [f'{IMAGE_PATH}/{x}' for x in os.listdir(IMAGE_PATH) if x.endswith('.dat')]
+for FILE in FILES:
+    with open(f"{FILE}", 'rb') as reader:
+        data = pickle.load(reader)
 
-    sam.filter_box_walls_a_priori()
+    plt.figure(0)
+    area, ecce = data.hist_labels_geometry(plot=False)
+    plt.figure()
+    image_label_overlay = label2rgb(data.labels, data.image, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+    plt.imshow(image_label_overlay)
+    plt.axis("off")
+    ax = plt.gca()
+    regions = regionprops(data.labels)
+    for region in regions:
+        minr, minc, maxr, maxc = region.bbox
+        rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+        ax.add_patch(rect)
+    print(len(unique(data.labels)))
+
+    plt.figure(1)
+    data.labels = clear_border(data.labels)
+    data.thresh_area = 500
+    regions = regionprops(data.labels)
+    for region in regions:
+        if not 500 <= region.area <= 5000:
+            data.labels[data.labels==region.label] = 0
+    data.labels = label(data.labels, connectivity=1)  # re-label label matrix
+    area, ecce = data.hist_labels_geometry(plot=False)
+    plt.figure()
+    image_label_overlay = label2rgb(data.labels, data.image, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+    plt.imshow(image_label_overlay)
+    plt.axis("off")
+    ax = plt.gca()
+    regions = regionprops(data.labels)
+    for region in regions:
+        minr, minc, maxr, maxc = region.bbox
+        rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+        ax.add_patch(rect)
+    print(len(unique(data.labels)))
+    plt.show()
+
+
+
+
 
 
 

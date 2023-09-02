@@ -8,7 +8,7 @@ from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 from skimage import io, color
 from skimage.measure import label, regionprops
 from skimage.color import label2rgb, rgb2gray
-from skimage.segmentation import find_boundaries
+from skimage.segmentation import find_boundaries, clear_border
 from skimage.draw import polygon, polygon2mask
 from skimage.feature import canny
 from skimage.filters import gaussian
@@ -43,11 +43,12 @@ class SegmentationWithSAM:
         self.overlap = 20  # Number of pixels removed from each image crop border (must be > 0 as the outest labels are not touching the picture borders)
         self.connectivity = 1
         """Parameters for filtering purposes"""
-        self.thresh_area = 50 # segments with area smaller than tresh_area are discarded
+        self.thresh_area = (500, 5000) # segments with area outisde the boundaries are discarded
         self.thresh_eccentricity = 0.7 # # segments with eccentricity smaller than tresh_eccentricitiy are discarded
         self.box_safe_margin: int = 5 # For 'filter_box_walls' method: number of pixel to extend the approximate polygon representing the sample box
         """Output"""
         self.labels = None
+        self.segments = None
 
     @staticmethod
     def calculate_slice_bboxes(image_height: int, image_width: int, slice_height: int = 512, slice_width: int = 512, overlap_height_ratio: float = 0.2, overlap_width_ratio: float = 0.2):
@@ -130,6 +131,7 @@ class SegmentationWithSAM:
             crop_n_points_downscale_factor = self.downscale_factor)
         masks = mask_generator.generate(self.image)
         self.labels = self.labels_from_sam_masks(self.image, masks)
+        self.segments = self.count_segments()
 
     def slice_image(self):
         """Features are nicely segmented when their characheristic length is about
@@ -206,7 +208,8 @@ class SegmentationWithSAM:
                 plt.tight_layout()
                 plt.savefig(f"{filename}, bboxes.png", bbox_inches="tight")
                 plt.close()
-        self.stitch_labels(flag_print=flag_print)
+        self.labels = self.stitch_labels(flag_print=flag_print)
+        self.segments = self.count_segments()
 
     def stitch_labels(self, flag_print: bool = False):
         if len(self.labels) <= 1:
@@ -244,18 +247,27 @@ class SegmentationWithSAM:
             if flag_print:
                 print(f"Done.")
 
-        self.labels = labels
+        return labels
+
+    def count_segments(self):
+        return len(unique(self.labels))
 
     '''Methods: *** LABELS FILTERING ***'''
 
     def filter_labels_by_shape(self):
         regions = regionprops(self.labels)
         for region in regions:
-            if region.area < self.thresh_area:
-                region.label = 0
-            if region.eccentricity < self.thresh_eccentricity and region.area < self.thresh_area:
-                region.label = 0
+            if not self.thresh_area[0] <= region.area <= self.thresh_area[1]:
+                self.labels[self.labels == region.label] = 0
+            if region.eccentricity < self.thresh_eccentricity:
+                self.labels[self.labels == region.label] = 0
         self.labels = label(self.labels, connectivity=1)  # re-label label matrix
+        self.segments = self.count_segments()
+
+    def filter_labels_on_the_border(self):
+        """Note: the method overwrite the attribute labels"""
+        self.labels = clear_border(self.labels)
+        self.segments = self.count_segments()
 
     def filter_box_walls(self):
         """Note: the method overwrite the label matrix with a new label, where
@@ -362,6 +374,25 @@ class SegmentationWithSAM:
         image_gs = color.rgb2gray(self.image)
         mask = image_gs > self.threshold
         self.image[mask] = [255, 255, 255]
+
+    '''Methods: *** PLOT ***'''
+
+    def plot_figure_label_overlay(self, bboxes:bool = True):
+        # save segmented image without boundary boxes to disc
+        plt.figure()
+        image_label_overlay = label2rgb(self.labels, self.image, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+        plt.imshow(image_label_overlay)
+        plt.axis("off")
+        if bboxes is True:
+            ax = plt.gca()
+            regions = regionprops(self.labels)
+            for region in regions:
+                minr, minc, maxr, maxc = region.bbox
+                rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+                ax.add_patch(rect)
+        plt.show()
+
+    '''Methods: *** SAVE ***'''
 
     def save_bin_to_disc(self):
         # save labels to disc in binary format
