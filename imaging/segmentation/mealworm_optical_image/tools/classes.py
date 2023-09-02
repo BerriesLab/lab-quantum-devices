@@ -1,6 +1,8 @@
+import os
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from numpy import unique, zeros, argwhere, uint8, array
+from numpy import unique, zeros, argwhere, uint8, array, histogram, linspace, argmax
+from scipy.interpolate import make_interp_spline
 import pickle
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 from skimage import io, color
@@ -9,6 +11,7 @@ from skimage.color import label2rgb, rgb2gray
 from skimage.segmentation import find_boundaries
 from skimage.draw import polygon, polygon2mask
 from skimage.feature import canny
+from skimage.filters import gaussian
 import torch
 
 class SegmentationWithSAM:
@@ -18,7 +21,7 @@ class SegmentationWithSAM:
         self.path_checkpoint = r"/content/models" # path where models are stored
         self.path_output = r"/content/data" # path where to save data output
         self.dict_checkpoint = {"vit_h": "sam_vit_h_4b8939.pth", "vit_b": "sam_vit_b_01ec64.pth", "vit_l": "sam_vit_l_0b3195.pth"}
-        self.image_name = path_image.split("\\")[-1]
+        self.image_name = path_image.split("/")[-1]
         """Image"""
         self.image = io.imread(self.path_image) # image in ndarray format
         self.image_lx = self.image.shape[0]
@@ -47,13 +50,7 @@ class SegmentationWithSAM:
         self.labels = None
 
     @staticmethod
-    def calculate_slice_bboxes(image_height: int,
-                               image_width: int,
-                               slice_height: int = 512,
-                               slice_width: int = 512,
-                               overlap_height_ratio: float = 0.2,
-                               overlap_width_ratio: float = 0.2
-                               ) -> list[list[int]]:
+    def calculate_slice_bboxes(image_height: int, image_width: int, slice_height: int = 512, slice_width: int = 512, overlap_height_ratio: float = 0.2, overlap_width_ratio: float = 0.2):
         """Given the height and width of an image, calculates how to divide the image into
         overlapping slices according to the height and width provided. These slices are returned
         as bounding boxes in xyxy format.
@@ -115,30 +112,7 @@ class SegmentationWithSAM:
                                 labels[labels == target] = labels[r, c]
         return labels
 
-    def get_image_info(self):
-        print(f"Image path: {self.path_image}\n"
-              f"Aspect ratio {self.image_aspect_ratio:.1f}\n"
-              f"Lenght X: {self.image_lx} px, Delta X: {self.image_dx:.4f} px\n"
-              f"Length Y: {self.image_ly} px, Delta Y: {self.image_dy:.4f} px\n"
-              f"Characteristic dimension: {self.characteristic_dimension} px")
-
-    def slice_image(self):
-        """Features are nicely segmented when their characheristic length is about
-        max 1/10th of the image size. It comes therefore necessary to run SAM on
-        image crops to ensure that the condition on the ratio is met."""
-        slice_lx = 10 * self.characteristic_dimension
-        slice_ly = 10 * self.characteristic_dimension
-        slice_bboxes = self.calculate_slice_bboxes(self.image_lx, self.image_ly, slice_lx, slice_ly, 0.2, 0.2)
-        print(f"Number of slices: {int(len(slice_bboxes))}")
-        self.slice_bboxes = slice_bboxes
-
-    def threshold(self):
-        """Note: this method overwrites the image originally stored in the object
-        with a thresholded copy of the image, where all pixels with grayscale value
-        larger than threshold are set to white."""
-        image_gs = color.rgb2gray(self.image)
-        mask = image_gs > self.threshold
-        self.image[mask] = [255, 255, 255]
+    '''Methods: *** SEGMENTATION WITH SAM ***'''
 
     def run_sam(self):
         """Note: the method overwrite the attribute labels"""
@@ -156,6 +130,16 @@ class SegmentationWithSAM:
             crop_n_points_downscale_factor = self.downscale_factor)
         masks = mask_generator.generate(self.image)
         self.labels = self.labels_from_sam_masks(self.image, masks)
+
+    def slice_image(self):
+        """Features are nicely segmented when their characheristic length is about
+        max 1/10th of the image size. It comes therefore necessary to run SAM on
+        image crops to ensure that the condition on the ratio is met."""
+        slice_lx = 10 * self.characteristic_dimension
+        slice_ly = 10 * self.characteristic_dimension
+        slice_bboxes = self.calculate_slice_bboxes(self.image_ly, self.image_lx, slice_ly, slice_lx, 0.2, 0.2)
+        print(f"Number of slices: {int(len(slice_bboxes))}")
+        self.slice_bboxes = slice_bboxes
 
     def run_sam_on_sliced_image(self, flag_print: bool = False, flag_plot: bool = False, flag_bin: bool = False):
         """Run SAM on all image crops separately. Switch the flag on to print SAM status,
@@ -222,15 +206,23 @@ class SegmentationWithSAM:
                 plt.tight_layout()
                 plt.savefig(f"{filename}, bboxes.png", bbox_inches="tight")
                 plt.close()
-        self.stitch_labels()
+        self.stitch_labels(flag_print=flag_print)
 
-    def stitch_labels(self):
+    def stitch_labels(self, flag_print: bool = False):
         if len(self.labels) <= 1:
             print("There is nothing to stitch.")
             return
-        for val in self.labels:
-            (xmin, ymin), (xmax, ymax) = val.crop # Get crop coordinates. Data format is [(x_min, y_min), (x_max, y_max)]
-            labels_crop = val.labels  # Get image crop labels
+
+        # create empty matrix for labeling
+        labels = zeros((self.image_lx, self.image_ly))
+
+        for n, val in enumerate(self.labels):
+
+            if flag_print:
+                print(f"Stitching {n+1} out of {len(self.slice_bboxes)}, crop {val['crop']}... ", end="")
+
+            (xmin, ymin), (xmax, ymax) = val["crop"] # Get crop coordinates. Data format is [(x_min, y_min), (x_max, y_max)]
+            labels_crop = val["labels"]  # Get image crop labels
             # Create a background (=0) border to separate touching labels. This is necessary because of the stitching operation
             # Otherwise, adjacent labels would be merged together and relabeled as one.
             boundary_matrix = find_boundaries(labels_crop, connectivity=1, mode="inner", background=0)
@@ -248,14 +240,20 @@ class SegmentationWithSAM:
             labels = label(labels, connectivity=self.connectivity)  # re-label label matrix
             labels = self.merge_labels_after_stitching(labels)
             labels = label(labels, connectivity=self.connectivity)  # re-label label matrix
-            self.labels = labels
 
-    def filter_by_shape(self):
+            if flag_print:
+                print(f"Done.")
+
+        self.labels = labels
+
+    '''Methods: *** LABELS FILTERING ***'''
+
+    def filter_labels_by_shape(self):
         regions = regionprops(self.labels)
         for region in regions:
             if region.area < self.thresh_area:
                 region.label = 0
-            if region.eccentricity < self.thresh_eccentricity and region.area < 2*self.thresh_area:
+            if region.eccentricity < self.thresh_eccentricity and region.area < self.thresh_area:
                 region.label = 0
         self.labels = label(self.labels, connectivity=1)  # re-label label matrix
 
@@ -275,12 +273,102 @@ class SegmentationWithSAM:
         box = polygon2mask(gra.shape, list(zip(box_x, box_y)))
         self.labels[box == 0] = 0
 
+    def filter_box_walls_a_priori(self):
+        """Identify the box floor a priori (i.e. before the segmentation). by finding the grayscale pixel intensity
+        that occurs the most. """
+
+        gra = rgb2gray(self.image)
+        smo = gaussian(gra, sigma=25, preserve_range=True, channel_axis=None)
+        hist = plt.hist(smo.flatten(), range=(0, 1), bins=100, log=False)
+        floor_val = hist[1][argmax(hist[0])]
+
+        mask = smo <= floor_val
+        gra[mask] = 0
+        plt.imshow(gra, cmap="gray")
+        plt.show()
+
+        #idxs = argwhere(gra == floor_val)
+        # box_xmin = min(idxs[:, 0]) #- self.box_safe_margin
+        # box_xmax = max(idxs[:, 0]) #+ self.box_safe_margin
+        # box_ymin = min(idxs[:, 1]) #- self.box_safe_margin
+        # box_ymax = max(idxs[:, 1]) #+ self.box_safe_margin
+        # box_x = array([box_xmin, box_xmin, box_xmax, box_xmax])
+        # box_y = array([box_ymin, box_ymax, box_ymax, box_ymin])
+        # polygon(box_x, box_y)
+        # box = polygon2mask(gra.shape, list(zip(box_x, box_y)))
+        # self.image = self.image[box_xmin:box_xmax, box_ymin:box_ymax, :]
+
+    '''Methods: *** IMAGE INFO & STATISTICS ***'''
+
+    def get_image_info(self):
+            print(f"Image path: {self.path_image}\n"
+                  f"Aspect ratio {self.image_aspect_ratio:.1f}\n"
+                  f"Lenght X: {self.image_lx} px, Delta X: {self.image_dx:.4f} px\n"
+                  f"Length Y: {self.image_ly} px, Delta Y: {self.image_dy:.4f} px\n"
+                  f"Characteristic dimension: {self.characteristic_dimension} px")
+
+    def pixel_stats_rgb(self, n_bins_rgb=100, plot:bool=False, save:bool=False):
+        plt.figure()
+        r = plt.hist(self.image[:, :, 0].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="red")
+        g = plt.hist(self.image[:, :, 1].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="green")
+        b = plt.hist(self.image[:, :, 2].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="blue")
+        if save:
+            plt.savefig(f"{os.getcwd()}/{self.image_name}, pixel rgb histogram.png", dpi=1200)
+        if plot:
+            plt.show()
+        plt.close()
+        return r, g, b
+
+    def pixel_stats_grayscale(self, n_bins_grayscale=100, plot:bool=False, save:bool=False):
+        g = plt.hist(rgb2gray(self.image).flatten(), range=(0, 1), bins=n_bins_grayscale, log=False)
+        if save:
+            plt.savefig(f"{os.getcwd()}/{self.image_name}, pixel grayscale histogram.png", dpi=1200)
+        if plot:
+            plt.show()
+        plt.close()
+        return g
+
+    '''Methods: *** LABELS STATISTICS ***'''
+
+    def hist_labels_geometry(self, plot:bool=True):
+        """Generate histrograms data and plots for labels area and eccentricity"""
+        regions = regionprops(self.labels)
+        area = zeros(len(regions))
+        ecce = zeros(len(regions))
+        for idx, region in enumerate(regions):
+            area[idx] = region.area
+            ecce[idx] = region.eccentricity
+        if plot is True:
+            plt.figure()
+            plt.hist(x=area, bins=100)
+            plt.figure()
+            plt.hist(x=ecce, bins=100)
+        return area, ecce
+
+    '''Methods: *** UTILITIES ***'''
+
+    def update_attributes(self):
+        """Update image attributes. Might be useful if: e.g. the image is rescaled."""
+        self.image_lx = self.image.shape[0]
+        self.image_ly = self.image.shape[1]
+        self.image_dx = (1-0)/self.image.shape[0]
+        self.image_dy = (1-0)/self.image.shape[1]
+        self.image_aspect_ratio = self.image.shape[0] / self.image.shape[1]
+
+    def threshold(self):
+        """Note: this method overwrites the image originally stored in the object
+        with a thresholded copy of the image, where all pixels with grayscale value
+        larger than threshold are set to white."""
+        image_gs = color.rgb2gray(self.image)
+        mask = image_gs > self.threshold
+        self.image[mask] = [255, 255, 255]
+
     def save_bin_to_disc(self):
         # save labels to disc in binary format
         with open(f"{self.path_output}/{self.image_name}, {self.model_type}, {self.points_per_side}, labels.dat", "wb") as writer:
-            pickle.dump(writer, vars(self))
+            pickle.dump(vars(self), writer)
 
-    def save_figure_to_disc(self):
+    def save_figure_label_overlay_to_disc(self):
         # save segmented image without boundary boxes to disc
         plt.figure()
         image_label_overlay = label2rgb(self.labels, self.image, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)

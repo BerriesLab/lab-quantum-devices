@@ -7,7 +7,7 @@ with open('README.md', 'r', encoding='utf-8') as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name='mealworm_optical_image',
+    name='tools',
     version='1',
     author='Davide Beretta',
     author_email='mail.davide.beretta@gmail.com',

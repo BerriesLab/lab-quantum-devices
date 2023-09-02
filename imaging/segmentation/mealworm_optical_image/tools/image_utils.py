@@ -18,34 +18,36 @@ from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 matplotlib.rcParams.update({'font.size': 10})
 fig_size = (30/2.54, 10/2.54)
 
-def pixel_stats(image, image_gray, n_bins_rgb=50, n_bins_grayscale=50, plot=True, save=(False, None)):
-    y_r, bin_edges_r = histogram(image[:, :, 0].flatten(), bins=n_bins_rgb, range=(0, 255))
-    y_g, bin_edges_g = histogram(image[:, :, 1].flatten(), bins=n_bins_rgb, range=(0, 255))
-    y_b, bin_edges_b = histogram(image[:, :, 2].flatten(), bins=n_bins_rgb, range=(0, 255))
-    bincenters_r = 0.5 * (bin_edges_r[1:] + bin_edges_r[:-1])
-    bincenters_g = 0.5 * (bin_edges_g[1:] + bin_edges_g[:-1])
-    bincenters_b = 0.5 * (bin_edges_b[1:] + bin_edges_b[:-1])
-    spl_r = make_interp_spline(bincenters_r, y_r, k=3)  # type: BSpline
-    spl_g = make_interp_spline(bincenters_g, y_g, k=3)  # type: BSpline
-    spl_b = make_interp_spline(bincenters_b, y_b, k=3)  # type: BSpline
-    x_rgb = linspace(0, 255, 300)
-    power_smooth_r = spl_r(x_rgb)
-    power_smooth_g = spl_g(x_rgb)
-    power_smooth_b = spl_b(x_rgb)
-    x_gray = linspace(0, 1, 300)
-    y, bin_edges = histogram(image_gray.flatten(), bins=n_bins_grayscale, range=(0, 1))
-    bincenters = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-    spl = make_interp_spline(bincenters, y, k=3)  # type: BSpline
-    power_smooth = spl(x_gray)
+def pixel_stats(image_rgb=None, image_gray=None, n_bins_rgb=50, n_bins_grayscale=50, plot=True, save=(False, None)):
+    if image_rgb is not None:
+        y_r, bin_edges_r = histogram(image_rgb[:, :, 0].flatten(), bins=n_bins_rgb, range=(0, 255))
+        y_g, bin_edges_g = histogram(image_rgb[:, :, 1].flatten(), bins=n_bins_rgb, range=(0, 255))
+        y_b, bin_edges_b = histogram(image_rgb[:, :, 2].flatten(), bins=n_bins_rgb, range=(0, 255))
+        bincenters_r = 0.5 * (bin_edges_r[1:] + bin_edges_r[:-1])
+        bincenters_g = 0.5 * (bin_edges_g[1:] + bin_edges_g[:-1])
+        bincenters_b = 0.5 * (bin_edges_b[1:] + bin_edges_b[:-1])
+        spl_r = make_interp_spline(bincenters_r, y_r, k=3)  # type: BSpline
+        spl_g = make_interp_spline(bincenters_g, y_g, k=3)  # type: BSpline
+        spl_b = make_interp_spline(bincenters_b, y_b, k=3)  # type: BSpline
+        x_rgb = linspace(0, 255, 300)
+        power_smooth_r = spl_r(x_rgb)
+        power_smooth_g = spl_g(x_rgb)
+        power_smooth_b = spl_b(x_rgb)
+    if image_gray is not None:
+        x_gray = linspace(0, 1, 300)
+        y, bin_edges = histogram(image_gray.flatten(), bins=n_bins_grayscale, range=(0, 1))
+        bincenters = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+        spl = make_interp_spline(bincenters, y, k=3)  # type: BSpline
+        power_smooth = spl(x_gray)
     if plot is True:
         fig, ax = plt.subplots(2, 2, figsize=(20/2.54, 15/2.54))
         ax[0, 0].set_title("Original")
-        ax[0, 0].imshow(image)
+        ax[0, 0].imshow(image_rgb)
         ax[0, 0].axis("off")
         ax[0, 1].set_title("Original RGB Hist.")
-        ax[0, 1].hist(image[:, :, 0].flatten(), bins=n_bins_rgb, log=False, alpha=0.25, color="red")
-        ax[0, 1].hist(image[:, :, 1].flatten(), bins=n_bins_rgb, log=False, alpha=0.25, color="green")
-        ax[0, 1].hist(image[:, :, 2].flatten(), bins=n_bins_rgb, log=False, alpha=0.25, color="blue")
+        ax[0, 1].hist(image_rgb[:, :, 0].flatten(), bins=n_bins_rgb, log=False, alpha=0.25, color="red")
+        ax[0, 1].hist(image_rgb[:, :, 1].flatten(), bins=n_bins_rgb, log=False, alpha=0.25, color="green")
+        ax[0, 1].hist(image_rgb[:, :, 2].flatten(), bins=n_bins_rgb, log=False, alpha=0.25, color="blue")
         ax[0, 1].plot(x_rgb, power_smooth_r, c="red")
         ax[0, 1].plot(x_rgb, power_smooth_g, c="green")
         ax[0, 1].plot(x_rgb, power_smooth_b, c="blue")
@@ -124,7 +126,7 @@ def segmentation_threshold_minimum_steps(image, structuring_element_dilation=squ
 
 def segmentation_threshold_otsu_steps(image, structuring_element_dilation=square(2), structuring_element_erosion=square(2), n_dilation=1, n_erosion=1, area_thresh=None):
     """Otsu’s method calculates an “optimal” threshold (marked by a red line in the histogram below)
-    by maximizing the variance between two mealworm_optical_image of pixels, which are separated by the threshold.
+    by maximizing the variance between two tools of pixels, which are separated by the threshold.
     Equivalently, this threshold minimizes the intra-class variance. Brighter pixels are considered background. Perform a
     morphological closing operation to fill the dark holes, generates labels and remove the labels toching the image border. Finally filter
     out all labels with a pixel area outside the passe range."""
