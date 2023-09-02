@@ -366,7 +366,8 @@ class SegmentationWithSAM:
     def save_bin_to_disc(self):
         # save labels to disc in binary format
         with open(f"{self.path_output}/{self.image_name}, {self.model_type}, {self.points_per_side}, labels.dat", "wb") as writer:
-            pickle.dump(vars(self), writer)
+            #pickle.dump(vars(self), writer)
+            pickle.dump(self, writer)
 
     def save_figure_label_overlay_to_disc(self):
         # save segmented image without boundary boxes to disc
@@ -375,7 +376,7 @@ class SegmentationWithSAM:
         plt.imshow(image_label_overlay)
         plt.axis("off")
         plt.tight_layout()
-        plt.savefig(f"{self.path_output}/{self.image_name}, {self.model_type}, {self.points_per_side}, segmentation.png", bbox_inches="tight")
+        plt.savefig(f"{self.path_output}/{self.image_name}, {self.model_type}, {self.points_per_side}, segmentation.png", bbox_inches="tight", dpi=1200)
         # save segmented image with boundary boxes to disc
         ax = plt.gca()
         regions = regionprops(self.labels)
@@ -385,5 +386,5 @@ class SegmentationWithSAM:
             ax.add_patch(rect)
         plt.axis("off")
         plt.tight_layout()
-        plt.savefig(f"{self.path_output}/{self.image_name}, {self.model_type}, {self.points_per_side}, segmentation with bboxes.png", bbox_inches="tight")
+        plt.savefig(f"{self.path_output}/{self.image_name}, {self.model_type}, {self.points_per_side}, segmentation with bboxes.png", bbox_inches="tight", dpi=1200)
         plt.close()
