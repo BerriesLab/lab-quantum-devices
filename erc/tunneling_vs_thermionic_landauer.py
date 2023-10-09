@@ -62,7 +62,7 @@ plt.figure(2)
 for idx in range(I1.shape[0]):
     plt.plot(Ls*1e9, I1[idx, :] + I2[idx, :], label=E_Bs[idx])
 plt.legend()
-#plt.show()
+plt.show()
 
 
 

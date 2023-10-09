@@ -1,60 +1,35 @@
 import os
-import cv2
-import numpy as np
-from skimage.color import label2rgb, rgb2gray
 from imaging.segmentation.mealworm_optical_image.tools.classes import SegmentationWithSAM
-from imaging.segmentation.mealworm_optical_image.tools.image_utils import pixel_stats
 import matplotlib.pyplot as plt
-import pickle
-from skimage.measure import label, regionprops
-from skimage.color import label2rgb, rgb2gray
-import matplotlib.patches as mpatches
-from skimage.segmentation import find_boundaries, clear_border
-from numpy import unique, argwhere, argmax, array, sort
-import numpy as np
-from skimage.feature import canny
-from skimage.exposure import equalize_hist, rescale_intensity
-from skimage.filters import gaussian
-from skimage.transform import hough_line, hough_line_peaks
 
-IMAGE_PATH = 'T:/data processed/optical images/segmentation sam/batch01'
-FILES = [f'{IMAGE_PATH}/{x}' for x in os.listdir(IMAGE_PATH) if x.endswith('.dat')]
-for FILE in FILES:
-    with open(f"{FILE}", 'rb') as reader:
-        data = pickle.load(reader)
-
-    area, ecce = data.hist_labels_geometry(plot=False)
-    plt.figure()
-    image_label_overlay = label2rgb(data.labels, data.image, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-    plt.imshow(image_label_overlay)
-    plt.axis("off")
-    ax = plt.gca()
-    regions = regionprops(data.labels)
-    for region in regions:
-        minr, minc, maxr, maxc = region.bbox
-        rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
-        ax.add_patch(rect)
-    print(len(unique(data.labels)))
-
-    gra = rgb2gray(data.image)
-    grad = canny(gra, sigma=5)
-    #grad[int(data.image_lx*0.1):int(data.image_lx*0.9), int(data.image_ly*0.1):int(data.image_ly*0.9)] = 0
-    plt.figure()
-    plt.imshow(grad, cmap='gray')
-    hspace, angles, dists = hough_line(grad)
-    accum, angles, dists = hough_line_peaks(hspace, angles, dists, min_distance=0, min_angle=0, num_peaks=4, threshold=0.1*hspace.max())
-    plt.figure()
-    plt.imshow(data.image)
-    for angle, dist in zip(angles, dists):
-        (x0, y0) = dist * np.array([np.cos(angle), np.sin(angle)])
-        plt.axline((x0, y0), slope=np.tan(angle + np.pi/2),linewidth=2, color='red')
-
-    #hist = plt.hist(smo.flatten(), range=(0, 1), bins=100, log=False)
-    #floor_val = hist[1][argmax(hist[0])]
-    #mask = smo <= floor_val
-    #self.labels[mask] = 0
-
+IMAGE_PATH = "T:/data raw/optical images/batch01"
+IMAGE_PATH = "T:/data raw/optical images/test"
+FILES = [rf"{IMAGE_PATH}/{x}" for x in os.listdir(IMAGE_PATH) if x.endswith(".jpg") or x.endswith(".png")]
+for FILE in FILES[0:1]:
+    sam = SegmentationWithSAM(FILE)
+    sam.characteristic_dimension = 100
+    sam.remove_trasparency_from_png_images()
+    sam.path_checkpoint = r"T:/sam models"
+    sam.path_output = r"T:/data processed/optical images/segmentation sam/test"
+    sam.make_mask_to_remove_background_by_polygon_input()
+    sam.slice_image()
+    sam.run_sam_on_sliced_image(mask=True)
+    sam.plot_figure_label_overlay()
     plt.show()
+
+    # area, ecce = data.hist_labels_geometry(plot=False)
+    # plt.figure()
+    # image_label_overlay = label2rgb(data.labels, data.image, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+    # plt.imshow(image_label_overlay)
+    # plt.axis("off")
+    # ax = plt.gca()
+    # regions = regionprops(data.labels)
+    # for region in regions:
+    #     minr, minc, maxr, maxc = region.bbox
+    #     rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+    #     ax.add_patch(rect)
+    # print(len(unique(data.labels)))
+
 
 
     # plt.figure()

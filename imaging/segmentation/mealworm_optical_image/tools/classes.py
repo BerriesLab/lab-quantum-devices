@@ -1,8 +1,10 @@
 import os
+import random
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from numpy import unique, zeros, argwhere, uint8, array, cos, sin, tan, pi, histogram, linspace, argmax
-from scipy.interpolate import make_interp_spline
+from matplotlib import cm
+import numpy as np
+from numpy import unique, zeros, argwhere, uint8, array, cos, sin, tan, pi, random
 import pickle
 from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
 from skimage import io, color
@@ -12,7 +14,40 @@ from skimage.segmentation import find_boundaries, clear_border
 from skimage.draw import polygon, polygon2mask
 from skimage.feature import canny
 from skimage.transform import hough_line, hough_line_peaks
+from skimage.draw import ellipse
 import torch
+
+class Line:
+    def __init__(self, m, c):
+        self.c:float = m
+        self.m:float = c
+
+    def get_rnd_point_along_the_line(self):
+        x = random.rand() * 10
+        y = self.m * x + self.c
+        return x, y
+
+class LineHesse:
+    def __init__(self, dist, angle):
+        self.dist:float = dist
+        self.angle:float = angle
+        self.x0: float = self.get_x0()
+        self.y0: float = self.get_y0()
+        self.m: float = self.get_m()
+
+    def get_x0(self):
+        return self.dist * array(cos(self.angle))
+
+    def get_y0(self):
+        return self.dist * array(sin(self.angle))
+
+    def get_m(self):
+        return tan(self.angle + pi/2)
+
+    def convert_to_class_line(self, xref:int=0):
+        m = self.m
+        c = self.y0 + (xref - self.x0) * self.m
+        return Line(m, c)
 
 class SegmentationWithSAM:
 
@@ -29,6 +64,7 @@ class SegmentationWithSAM:
         self.image_dx = (1-0)/self.image.shape[0]
         self.image_dy = (1-0)/self.image.shape[1]
         self.image_aspect_ratio = self.image.shape[0] / self.image.shape[1]
+        self.mask:np.array = None
         """SAM attributes"""
         self.model_type = "vit_h" # model type in string
         self.points_per_side = 128 # maximum value is 128
@@ -49,6 +85,486 @@ class SegmentationWithSAM:
         """Output"""
         self.labels = None
         self.segments = None
+
+    '''Methods: *** SEGMENTATION WITH SAM ***'''
+
+    def run_sam(self, mask: bool = False):
+        """Note: the method overwrite the attribute labels"""
+        mask_generator = SamAutomaticMaskGenerator(
+            model = self.model_type,
+            points_per_side = self.points_per_side,
+            points_per_batch = self.points_per_batch,
+            # pred_iou_thresh=0.88,
+            # stability_score_thresh=0.95,
+            # stability_score_offset= 1.0,
+            # box_nms_thresh: float = 0.7,
+            crop_n_layers = self.crop_n_layers,
+            # crop_nms_thresh: float = 0.7,
+            # crop_overlap_ratio: float = 512 / 1500,
+            crop_n_points_downscale_factor = self.downscale_factor)
+        if mask:
+            masks = mask_generator.generate(self.apply_mask_to_image(copy=True))
+        if not mask:
+            masks = mask_generator.generate(self.image)
+        self.labels = self.labels_from_sam_masks(self.image, masks)
+        self.segments = self.count_segments()
+
+    def slice_image(self):
+        """Features are nicely segmented when their characheristic length is about
+        max 1/10th of the image size. It comes therefore necessary to run SAM on
+        image crops to ensure that the condition on the ratio is met."""
+        slice_lx = 10 * self.characteristic_dimension
+        slice_ly = 10 * self.characteristic_dimension
+        slice_bboxes = self.calculate_slice_bboxes(self.image_ly, self.image_lx, slice_ly, slice_lx, 0.2, 0.2)
+        print(f"Number of slices: {int(len(slice_bboxes))}")
+        self.slice_bboxes = slice_bboxes
+
+    def run_sam_on_sliced_image(self, mask: bool = False, flag_print: bool = False, flag_plot: bool = False, flag_bin: bool = False):
+        """Run SAM on all image crops separately. Switch the flag on to print SAM status,
+        and to save to disc plots and/or binary files. Note: the method overwrite the attribute labels, and
+        the data of each image crop are appended to the object attribute 'labels'."""
+        if self.slice_bboxes is None:
+            print("'slice_bboxes' is empty. Please slice the image with 'slice_image' method.")
+            return
+        sam = sam_model_registry[self.model_type](checkpoint = f"{self.path_checkpoint}/{self.dict_checkpoint[self.model_type]}")
+        sam.to(device = self.device)
+        for idx, slice_box in enumerate(self.slice_bboxes):
+            print(f'Running SAM on slice {idx}... ', end='')
+            xmin, ymin = slice_box[0]
+            xmax, ymax = slice_box[1]
+            if mask:
+                image_crop = self.apply_mask_to_image(copy=True)[xmin:xmax, ymin:ymax]
+            if not mask:
+                image_crop = self.image[xmin:xmax, ymin:ymax]
+
+            if flag_print is True: # print segmentation status
+                print(f"{idx+1} out of {len(self.slice_bboxes)}, {self.image_name}, size {self.image.shape}, crop {slice_box}, thresholding {self.threshold}, model {self.model_type}, points per side {self.points_per_side}, crop layers {self.crop_n_layers}, downscale factor {self.downscale_factor}... ", end="")
+
+            # run segmentation on image crop
+            mask_generator = SamAutomaticMaskGenerator(
+                model = sam,
+                points_per_side = self.points_per_side,
+                points_per_batch = self.points_per_batch,
+                crop_n_layers = self.crop_n_layers,
+                crop_n_points_downscale_factor = self.downscale_factor)
+            masks = mask_generator.generate(image_crop)
+            labels_crop = self.labels_from_sam_masks(image_crop, masks)
+
+            # define a filename for the image crop for saving purposes
+            filename = f"{self.path_output}/{self.image_name}, size {self.image.shape}, crop {slice_box}, thresholding {self.threshold}, model {self.model_type}, points per side {self.points_per_side}, crop layers {self.crop_n_layers}, downscale factor {self.downscale_factor}, segments {len(unique(labels_crop))}"
+
+            if flag_print is True: # print number of segments in image crop
+                print(f"segments {len(unique(labels_crop))}")
+
+            data = {"image": self.image_name,
+                    "crop": slice_box,
+                    "segments": len(unique(labels_crop)),
+                    "labels": labels_crop}
+            if idx == 0:
+                self.labels = [data]
+            else:
+                self.labels.append(data)
+
+            if flag_bin is True: # save binary copy to disc
+                with open(f"{filename}.dat", "wb") as writer:
+                    pickle.dump(data, writer)
+
+            if flag_plot is True:
+                plt.figure() # generate and save segmentation figure to disc
+                image_label_overlay = label2rgb(labels_crop, image_crop, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+                plt.imshow(image_label_overlay)
+                plt.axis("off")
+                plt.tight_layout()
+                plt.savefig(f"{filename}.png", bbox_inches="tight")
+
+                ax = plt.gca()  # generate and save segmentation with bboxes figure to disc
+                regions = regionprops(labels_crop)
+                for region in regions:
+                    minr, minc, maxr, maxc = region.bbox
+                    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+                    ax.add_patch(rect)
+                plt.axis("off")
+                plt.tight_layout()
+                plt.savefig(f"{filename}, bboxes.png", bbox_inches="tight")
+                plt.close()
+            print("Done.")
+        self.labels = self.stitch_labels(flag_print=flag_print)
+        self.segments = self.count_segments()
+
+    def stitch_labels(self, flag_print: bool = False):
+        if len(self.labels) <= 1:
+            print("There is nothing to stitch.")
+            return
+
+        # create empty matrix for labeling
+        labels = zeros((self.image_lx, self.image_ly))
+
+        for n, val in enumerate(self.labels):
+
+            if flag_print:
+                print(f"Stitching {n+1} out of {len(self.slice_bboxes)}, crop {val['crop']}... ", end="")
+
+            (xmin, ymin), (xmax, ymax) = val["crop"] # Get crop coordinates. Data format is [(x_min, y_min), (x_max, y_max)]
+            labels_crop = val["labels"]  # Get image crop labels
+            # Create a background (=0) border to separate touching labels. This is necessary because of the stitching operation
+            # Otherwise, adjacent labels would be merged together and relabeled as one.
+            boundary_matrix = find_boundaries(labels_crop, connectivity=1, mode="inner", background=0)
+            labels_crop[boundary_matrix > 0] = 0
+
+            if xmin == ymin == 0:
+                labels[xmin:xmax, ymin:ymax] = labels_crop
+            if xmin > 0 and ymin == 0:
+                labels[xmin+self.overlap:xmax, ymin:ymax] = labels_crop[self.overlap:, :]
+            if xmin == 0 and ymin > 0:
+                labels[xmin:xmax, ymin+self.overlap:ymax] = labels_crop[:, self.overlap:]
+            if xmin > 0 and ymin > 0:
+                labels[xmin+self.overlap:xmax, ymin+self.overlap:ymax] = labels_crop[self.overlap:, self.overlap:]
+
+            labels = label(labels, connectivity=self.connectivity)  # re-label label matrix
+            labels = self.merge_labels_after_stitching(labels)
+            labels = label(labels, connectivity=self.connectivity)  # re-label label matrix
+
+            if flag_print:
+                print(f"Done.")
+
+        return labels
+
+    def count_segments(self):
+        return len(unique(self.labels))
+
+    '''Methods: *** LABELS FILTERING ***'''
+
+    def filter_labels_by_shape(self):
+        regions = regionprops(self.labels)
+        for region in regions:
+            if not self.thresh_area[0] <= region.area <= self.thresh_area[1]:
+                self.labels[self.labels == region.label] = 0
+            if region.eccentricity < self.thresh_eccentricity:
+                self.labels[self.labels == region.label] = 0
+        self.labels = label(self.labels, connectivity=1)  # re-label label matrix
+        self.segments = self.count_segments()
+
+    def filter_labels_on_the_border(self):
+        """Note: the method overwrite the attribute labels"""
+        self.labels = clear_border(self.labels)
+        self.segments = self.count_segments()
+
+    def filter_labels_outside_box_by_canny(self, sigma:int=1):
+        """This method is meant to be used to remove all labels on the box walls that result from
+        non-homogeneous illumination. Note: the method overwrite the label matrix with a new label, where
+        all segments on the box walls are discarded (or set to background value)"""
+        gra = rgb2gray(self.image)
+        edge_map = canny(gra, sigma=1, low_threshold=0, high_threshold=1, mask=None)
+        idxs = argwhere(edge_map == 1)
+        box_xmin = min(idxs[:, 0]) - self.box_safe_margin
+        box_xmax = max(idxs[:, 0]) + self.box_safe_margin
+        box_ymin = min(idxs[:, 1]) - self.box_safe_margin
+        box_ymax = max(idxs[:, 1]) + self.box_safe_margin
+        box_x = array([box_xmin, box_xmin, box_xmax, box_xmax])
+        box_y = array([box_ymin, box_ymax, box_ymax, box_ymin])
+        polygon(box_x, box_y)
+        box = polygon2mask(gra.shape, list(zip(box_x, box_y)))
+        self.labels[box == 0] = 0
+
+    '''Methods: *** MASK TO REMOVE BACKGROUND - BEFORE SAM ***'''
+
+    def make_mask_to_remove_background_by_hist(self, epsilon=5):
+        """The method finds the most recurring pixel color, and mask out everything else."""
+        hist_r = np.histogram(self.image[:, :, 0].flatten(), 100)
+        hist_g = np.histogram(self.image[:, :, 1].flatten(), 100)
+        hist_b = np.histogram(self.image[:, :, 2].flatten(), 100)
+        max_hist_r = hist_r[1][np.argmax(hist_r[0])]
+        max_hist_g = hist_g[1][np.argmax(hist_g[0])]
+        max_hist_b = hist_b[1][np.argmax(hist_b[0])]
+        range_r = (max_hist_r * (1-epsilon/100), max_hist_r * (1+epsilon/100))
+        range_g = (max_hist_g * (1-epsilon/100), max_hist_g * (1+epsilon/100))
+        range_b = (max_hist_b * (1-epsilon/100), max_hist_b * (1+epsilon/100))
+        mask = (self.image[:, :, 0] <= range_r[1]) * (self.image[:, :, 0] >= range_r[0]) * \
+               (self.image[:, :, 1] <= range_g[1]) * (self.image[:, :, 1] >= range_g[0]) * \
+               (self.image[:, :, 2] <= range_b[1]) * (self.image[:, :, 2] >= range_b[0])
+        return mask
+
+    def make_mask_to_remove_background_by_hough(self, sigma:int=2, n:int=4, crop:float=0.1, hough_threshold:float=0.1, epsilon_dist:int=1000):
+        """THIS METHOD IS NOT IMPLEMENTED YET
+        The moethod calculates the gradient from a blurred grayscale image. Then apply the Hough transform and
+        select a number of line specified by the user. It groups the lines into parallels, filter out the parallels
+        that are close to each other to leave one parallel per group. Then it finds the intersection of the
+        parallels, order the vertex and build a rectangle polygon. The pixel inside the rectangel are the mask:
+        everything outside the mask is set to 0."""
+        plt.figure()
+        mask = self.filter_box_by_hist()
+        plt.imshow(self.image, cmap='gray')
+        image_g = rgb2gray(self.image)
+        image_g[mask] = 0
+        grad = canny(image_g, sigma=sigma)
+        grad[ellipse(r=int(self.image_lx/2), c=int(self.image_ly/2), r_radius=int(self.image_lx/3), c_radius=int(self.image_ly/3), shape=None, rotation=0.0)]=0
+        plt.figure()
+        plt.imshow(grad, cmap='gray')
+        #plt.imshow(self.image, cmap='gray')
+        plt.show()
+        hspace, angles, dists = hough_line(grad)
+        accum, angles, dists = hough_line_peaks(hspace, angles, dists, min_distance=0, min_angle=0, num_peaks=n, threshold=hough_threshold*hspace.max())
+        # Notes on the Hough transform: The origin is the top left corner of the original image.
+        # X and Y axis are horizontal and vertical edges respectively.
+        # The distance is the minimal algebraic distance from the origin to the detected line.
+        lines = []
+        for i, (angle, dist) in enumerate(zip(angles, dists)):
+            print(f"Found line {i}: dist = {dist}, angle = {angle}")
+            lines.append(LineHesse(dist, angle))
+
+        # group lines in parallels. Save them in a list of list [[l11, l12, ...], [l21, l22, ...], ...]
+        tracker = []
+        plines = []
+        k = 0
+        for i in range(n):
+            if i not in tracker:
+                plines.append([])
+                plines[k].append(lines[i])
+                tracker.append(i)
+                for j in range(n):
+                    if j > i and j not in tracker and self.lines_parallel(lines[i], lines[j], epsilon=np.radians(5)):
+                        plines[k].append(lines[j])
+                        tracker.append(j)
+                k = k + 1
+        print('\nGroup of parallel lines:')
+        for grp in plines:
+            for x in grp:
+                print(f'({x.dist:.2f}, {x.angle:.2f})', end=', ')
+            print("")
+
+        # filter lines that are too close to each other. This leaves two lines per parallel
+        print("\nFiltering lines close to each other")
+        for k, val in enumerate(plines):
+            for i, vali in enumerate(val):
+                for j, valj in enumerate(val):
+                    if j > i:
+                        if abs(vali.dist - valj.dist) < epsilon_dist:
+                            plines[k].remove(valj)
+        print('Group of parallel lines:')
+        for grp in plines:
+            for x in grp:
+                print(f'({x.dist:.2f}, {x.angle:.2f})', end=', ')
+            print("")
+
+        # filter lines that have no parallels. This removes all lines that do not define a rectangular shape
+        print("\nFilter group of lines that have no parallels")
+        for k, val in enumerate(plines):
+            if len(val) < 2:
+                plines.remove(val)
+        print('Group of parallel lines:')
+        for grp in plines:
+            for x in grp:
+                print(f'({x.dist:.2f}, {x.angle:.2f})', end=', ')
+            print("")
+
+        # plot results
+        color = iter(cm.tab10(np.linspace(0, 1, n)))
+        for val in plines:
+            c = next(color)
+            for idx, subval in enumerate(val):
+                plt.axline((subval.x0, subval.y0), slope=subval.m, linewidth=2, color=c)
+
+        # check if the algorithm has produced two pairs of parallel lines that could define a rectangle. If not return -1
+        if len(plines) > 2:
+            print("More than two pairs of parallel lines resulting. Cannot remove the background.")
+            return -1
+
+        # find lines crossing points
+        x00, y00 = self.find_intersection_of_two_lines_in_hesse_form(plines[0][0], plines[1][0])
+        x01, y01 = self.find_intersection_of_two_lines_in_hesse_form(plines[0][0], plines[1][1])
+        x02, y02 = self.find_intersection_of_two_lines_in_hesse_form(plines[0][1], plines[1][0])
+        x03, y03 = self.find_intersection_of_two_lines_in_hesse_form(plines[0][1], plines[1][1])
+        plt.plot(x00, y00, marker='o', color='none', markersize=10, markeredgecolor='red')
+        plt.plot(x01, y01, marker='o', color='none', markersize=10, markeredgecolor='red')
+        plt.plot(x02, y02, marker='o', color='none', markersize=10, markeredgecolor='red')
+        plt.plot(x03, y03, marker='o', color='none', markersize=10, markeredgecolor='red')
+        xys = [(x00, y00), (x01, y01), (x02, y02), (x03, y03)]
+        xys = self.order_coordinates_by_graham_scan(xys)
+        box = polygon2mask(self.image.shape[0:2], np.flip(np.array(xys), axis=1))
+        self.mask = box
+        plt.imshow(self.image)
+
+    def make_mask_to_remove_background_by_polygon_input(self):
+        """The method asks the user to select the vertex of a polygon that would contain all
+        features to segment. Then, it convert the vertex into a polygon and the polygon into a mask,
+        which is stored in the object attribute."""
+        # Display the image using imshow
+        plt.imshow(self.image)
+        plt.title('Click to Define Polygon (Right-click to Delete, Middle-click to Finish)')
+        # Ask the user to click on the image to define polygon vertices
+        print("Click on the image to define the polygon vertices. Right-click to finish.")
+        vertices = plt.ginput(n=-1, timeout=0, show_clicks=True)
+        # Close the image plot
+        plt.close()
+        # Display the extracted polygon coordinates
+        print("Polygon vertices:")
+        for vertex in vertices:
+            print(f"X: {vertex[0]}, Y: {vertex[1]}")
+        # Create a mask using polygon2mask
+        mask = polygon2mask(self.image.shape[0:2], np.flip(vertices, axis=1))
+        self.mask = np.logical_not(mask)
+        #self.image[np.logical_not(mask)] = 0, 0, 0
+        #plt.imshow(self.image)
+
+    def apply_mask_to_image(self, copy:bool=True):
+        """Retunr a copy of the image where everything outside the mask is set to black"""
+        if copy:
+            masked_image = self.image
+            masked_image[np.logical_not(self.mask)] = 0, 0, 0
+            return masked_image
+        if not copy:
+            self.image[np.logical_not(self.mask)] = 0, 0, 0
+
+    '''Methods: *** IMAGE INFO & STATISTICS ***'''
+
+    def get_image_info(self):
+            print(f"Image path: {self.path_image}\n"
+                  f"Aspect ratio {self.image_aspect_ratio:.1f}\n"
+                  f"Lenght X: {self.image_lx} px, Delta X: {self.image_dx:.4f} px\n"
+                  f"Length Y: {self.image_ly} px, Delta Y: {self.image_dy:.4f} px\n"
+                  f"Characteristic dimension: {self.characteristic_dimension} px")
+
+    def pixel_stats_rgb(self, n_bins_rgb=100, plot:bool=False, save:bool=False):
+        plt.figure()
+        r = plt.hist(self.image[:, :, 0].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="red")
+        g = plt.hist(self.image[:, :, 1].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="green")
+        b = plt.hist(self.image[:, :, 2].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="blue")
+        if save:
+            plt.savefig(f"{os.getcwd()}/{self.image_name}, pixel rgb histogram.png", dpi=1200)
+        if plot:
+            plt.show()
+        plt.close()
+        return r, g, b
+
+    def pixel_stats_grayscale(self, n_bins_grayscale=100, plot:bool=False, save:bool=False):
+        g = plt.hist(rgb2gray(self.image).flatten(), range=(0, 1), bins=n_bins_grayscale, log=False)
+        if save:
+            plt.savefig(f"{os.getcwd()}/{self.image_name}, pixel grayscale histogram.png", dpi=1200)
+        if plot:
+            plt.show()
+        plt.close()
+        return g
+
+    '''Methods: *** LABELS STATISTICS ***'''
+
+    def hist_labels_geometry(self, plot:bool=True):
+        """Generate histrograms data and plots for labels area and eccentricity"""
+        regions = regionprops(self.labels)
+        area = zeros(len(regions))
+        ecce = zeros(len(regions))
+        for idx, region in enumerate(regions):
+            area[idx] = region.area
+            ecce[idx] = region.eccentricity
+        if plot is True:
+            plt.figure()
+            plt.hist(x=area, bins=100)
+            plt.figure()
+            plt.hist(x=ecce, bins=100)
+        return area, ecce
+
+    '''Methods: *** UTILITIES ***'''
+
+    def remove_trasparency_from_png_images(self):
+        self.image = self.image[:, :, 0:3]
+
+    @staticmethod
+    def lines_parallel(l1:LineHesse, l2:LineHesse, epsilon:float=3.0):
+        if abs(l1.m - l2.m) < epsilon:
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def lines_perpendicular(l1:Line, l2:Line, epsilon:float=1):
+        """Build two vectors from two random points belonging to the passed Line objects,
+        then check if the dot product is zero."""
+        x11, y11 = l1.get_rnd_point_along_the_line()
+        x12, y12 = l1.get_rnd_point_along_the_line()
+        x21, y21 = l2.get_rnd_point_along_the_line()
+        x22, y22 = l2.get_rnd_point_along_the_line()
+        v1 = np.array([y11, y12])
+        v2 = np.array([y21, y22])
+        if np.dot(v1, v2) < epsilon:
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def find_intersection_of_two_lines(l1:Line, l2:Line):
+        """Find the intersection point of two straight lines, given the latter in the form y = mx + c"""
+        x = - (l1.c - l2.c) / (l1.m - l2.m)
+        y = l1.m * x + l1.c
+        return x, y
+
+    @staticmethod
+    def find_intersection_of_two_lines_in_hesse_form(l1:LineHesse, l2:LineHesse):
+        """Finds the intersection of two lines given in Hesse normal form.
+        Returns closest integer pixel locations.
+        """
+        rho1, theta1 = l1.dist, l1.angle
+        rho2, theta2 = l2.dist, l2.angle
+        A = np.array([
+            [np.cos(theta1), np.sin(theta1)],
+            [np.cos(theta2), np.sin(theta2)]
+        ])
+        b = np.array([[rho1], [rho2]])
+        x0, y0 = np.linalg.solve(A, b)
+        x0, y0 = int(np.round(x0)), int(np.round(y0))
+        return x0, y0
+
+    def get_rectangle_vertex_from_edges(self, l1:Line, l2:Line, l3:Line, l4:Line):
+        """Find vertexes of rectangle. First find parallel lines and group them. Then find
+        intersection points between lines that are not parallel"""
+        ls = [l1, l2, l3, l4]
+        ls_prl = []
+        for i in range(4):
+            for j in range(4):
+                if j <= i:
+                    continue
+                if self.lines_parallel(ls[i], ls[j]):
+                    ls_prl.append((ls[i], ls[j]))
+
+        if len(ls_prl) != 2:
+            print("There are more than two groups of parallel lines. Execution terminates here.")
+            exit()
+
+        x1, y1 = self.find_intersection_of_two_lines(ls_prl[0][0], ls_prl[1][0])
+        x2, y2 = self.find_intersection_of_two_lines(ls_prl[0][0], ls_prl[1][1])
+        x3, y3 = self.find_intersection_of_two_lines(ls_prl[0][1], ls_prl[1][0])
+        x4, y4 = self.find_intersection_of_two_lines(ls_prl[0][1], ls_prl[1][1])
+        return (x1, y1), (x2, y2), (x3, y3), (x4, y4)
+
+    @staticmethod
+    def order_coordinates_by_graham_scan(xys:list[tuple]):
+        # find coordinates of the center
+        xc = xys[0][0]
+        yc = xys[0][1]
+        ic = 0
+        for idx, xy in enumerate(xys):
+            if xy[1] < yc:
+                yc = xy[1]
+                xc = xy[0]
+                ic = idx
+        for idx, xy in enumerate(xys):
+            if xy[1] == yc and xy[0] < xc:
+                yc = xy[1]
+                xc = xy[0]
+                ic = idx
+        # calculate angles, distance.
+        i, theta, d = [idx], [0], [0]
+        for idx, xy in enumerate(xys):
+            if idx == ic:
+                continue
+            i.append(idx)
+            if xy[0]==xc and xy[1]-yc >= 0:
+                theta.append(np.pi/2)
+            else:
+                theta.append(np.arctan2((xy[1]-yc), (xy[0]-xc)))
+            d.append(((xy[0]-xc)**2 + (xy[1]-yc)**2)**0.5)
+        points = list(zip(i, theta, d))
+        points.sort(key=lambda x: x[1])
+        points = np.asarray(points)
+        return [xys[int(x)] for x in points[:, 0]]
 
     @staticmethod
     def calculate_slice_bboxes(image_height: int, image_width: int, slice_height: int = 512, slice_width: int = 512, overlap_height_ratio: float = 0.2, overlap_width_ratio: float = 0.2):
@@ -112,255 +628,6 @@ class SegmentationWithSAM:
                                 target = labels[subr, subc]
                                 labels[labels == target] = labels[r, c]
         return labels
-
-    '''Methods: *** SEGMENTATION WITH SAM ***'''
-
-    def run_sam(self):
-        """Note: the method overwrite the attribute labels"""
-        mask_generator = SamAutomaticMaskGenerator(
-            model = self.model_type,
-            points_per_side = self.points_per_side,
-            points_per_batch = self.points_per_batch,
-            # pred_iou_thresh=0.88,
-            # stability_score_thresh=0.95,
-            # stability_score_offset= 1.0,
-            # box_nms_thresh: float = 0.7,
-            crop_n_layers = self.crop_n_layers,
-            # crop_nms_thresh: float = 0.7,
-            # crop_overlap_ratio: float = 512 / 1500,
-            crop_n_points_downscale_factor = self.downscale_factor)
-        masks = mask_generator.generate(self.image)
-        self.labels = self.labels_from_sam_masks(self.image, masks)
-        self.segments = self.count_segments()
-
-    def slice_image(self):
-        """Features are nicely segmented when their characheristic length is about
-        max 1/10th of the image size. It comes therefore necessary to run SAM on
-        image crops to ensure that the condition on the ratio is met."""
-        slice_lx = 10 * self.characteristic_dimension
-        slice_ly = 10 * self.characteristic_dimension
-        slice_bboxes = self.calculate_slice_bboxes(self.image_ly, self.image_lx, slice_ly, slice_lx, 0.2, 0.2)
-        print(f"Number of slices: {int(len(slice_bboxes))}")
-        self.slice_bboxes = slice_bboxes
-
-    def run_sam_on_sliced_image(self, flag_print: bool = False, flag_plot: bool = False, flag_bin: bool = False):
-        """Run SAM on all image crops separately. Switch the flag on to print SAM status,
-        and to save to disc plots and/or binary files. Note: the method overwrite the attribute labels, and
-        the data of each image crop are appended to the object attribute 'labels'."""
-        if self.slice_bboxes is None:
-            print("'slice_bboxes' is empty. Please slice the image with 'slice_image' method.")
-            return
-        sam = sam_model_registry[self.model_type](checkpoint = f"{self.path_checkpoint}/{self.dict_checkpoint[self.model_type]}")
-        sam.to(device = self.device)
-        for idx, slice_box in enumerate(self.slice_bboxes):
-
-            xmin, ymin = slice_box[0]
-            xmax, ymax = slice_box[1]
-            image_crop = self.image[xmin:xmax, ymin:ymax]
-
-            if flag_print is True: # print segmentation status
-                print(f"{idx+1} out of {len(self.slice_bboxes)}, {self.image_name}, size {self.image.shape}, crop {slice_box}, thresholding {self.threshold}, model {self.model_type}, points per side {self.points_per_side}, crop layers {self.crop_n_layers}, downscale factor {self.downscale_factor}... ", end="")
-
-            # run segmentation on image crop
-            mask_generator = SamAutomaticMaskGenerator(
-                model = sam,
-                points_per_side = self.points_per_side,
-                points_per_batch = self.points_per_batch,
-                crop_n_layers = self.crop_n_layers,
-                crop_n_points_downscale_factor = self.downscale_factor)
-            masks = mask_generator.generate(image_crop)
-            labels_crop = self.labels_from_sam_masks(image_crop, masks)
-
-            # define a filename for the image crop for saving purposes
-            filename = f"{self.path_output}/{self.image_name}, size {self.image.shape}, crop {slice_box}, thresholding {self.threshold}, model {self.model_type}, points per side {self.points_per_side}, crop layers {self.crop_n_layers}, downscale factor {self.downscale_factor}, segments {len(unique(labels_crop))}"
-
-            if flag_print is True: # print number of segments in image crop
-                print(f"segments {len(unique(labels_crop))}")
-
-            data = {"image": self.image_name,
-                    "crop": slice_box,
-                    "segments": len(unique(labels_crop)),
-                    "labels": labels_crop}
-            if idx == 0:
-                self.labels = [data]
-            else:
-                self.labels.append(data)
-
-            if flag_bin is True: # save binary copy to disc
-                with open(f"{filename}.dat", "wb") as writer:
-                    pickle.dump(data, writer)
-
-            if flag_plot is True:
-                plt.figure() # generate and save segmentation figure to disc
-                image_label_overlay = label2rgb(labels_crop, image_crop, alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-                plt.imshow(image_label_overlay)
-                plt.axis("off")
-                plt.tight_layout()
-                plt.savefig(f"{filename}.png", bbox_inches="tight")
-
-                ax = plt.gca()  # generate and save segmentation with bboxes figure to disc
-                regions = regionprops(labels_crop)
-                for region in regions:
-                    minr, minc, maxr, maxc = region.bbox
-                    rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
-                    ax.add_patch(rect)
-                plt.axis("off")
-                plt.tight_layout()
-                plt.savefig(f"{filename}, bboxes.png", bbox_inches="tight")
-                plt.close()
-        self.labels = self.stitch_labels(flag_print=flag_print)
-        self.segments = self.count_segments()
-
-    def stitch_labels(self, flag_print: bool = False):
-        if len(self.labels) <= 1:
-            print("There is nothing to stitch.")
-            return
-
-        # create empty matrix for labeling
-        labels = zeros((self.image_lx, self.image_ly))
-
-        for n, val in enumerate(self.labels):
-
-            if flag_print:
-                print(f"Stitching {n+1} out of {len(self.slice_bboxes)}, crop {val['crop']}... ", end="")
-
-            (xmin, ymin), (xmax, ymax) = val["crop"] # Get crop coordinates. Data format is [(x_min, y_min), (x_max, y_max)]
-            labels_crop = val["labels"]  # Get image crop labels
-            # Create a background (=0) border to separate touching labels. This is necessary because of the stitching operation
-            # Otherwise, adjacent labels would be merged together and relabeled as one.
-            boundary_matrix = find_boundaries(labels_crop, connectivity=1, mode="inner", background=0)
-            labels_crop[boundary_matrix > 0] = 0
-
-            if xmin == ymin == 0:
-                labels[xmin:xmax, ymin:ymax] = labels_crop
-            if xmin > 0 and ymin == 0:
-                labels[xmin+self.overlap:xmax, ymin:ymax] = labels_crop[self.overlap:, :]
-            if xmin == 0 and ymin > 0:
-                labels[xmin:xmax, ymin+self.overlap:ymax] = labels_crop[:, self.overlap:]
-            if xmin > 0 and ymin > 0:
-                labels[xmin+self.overlap:xmax, ymin+self.overlap:ymax] = labels_crop[self.overlap:, self.overlap:]
-
-            labels = label(labels, connectivity=self.connectivity)  # re-label label matrix
-            labels = self.merge_labels_after_stitching(labels)
-            labels = label(labels, connectivity=self.connectivity)  # re-label label matrix
-
-            if flag_print:
-                print(f"Done.")
-
-        return labels
-
-    def count_segments(self):
-        return len(unique(self.labels))
-
-    '''Methods: *** LABELS FILTERING ***'''
-
-    def filter_labels_by_shape(self):
-        regions = regionprops(self.labels)
-        for region in regions:
-            if not self.thresh_area[0] <= region.area <= self.thresh_area[1]:
-                self.labels[self.labels == region.label] = 0
-            if region.eccentricity < self.thresh_eccentricity:
-                self.labels[self.labels == region.label] = 0
-        self.labels = label(self.labels, connectivity=1)  # re-label label matrix
-        self.segments = self.count_segments()
-
-    def filter_labels_on_the_border(self):
-        """Note: the method overwrite the attribute labels"""
-        self.labels = clear_border(self.labels)
-        self.segments = self.count_segments()
-
-    def filter_box_by_canny(self, sigma:int=1):
-        """This method is meant to be used to remove all labels on the box walls that result from
-        non-homogeneous illumination. Note: the method overwrite the label matrix with a new label, where
-        all segments on the box walls are discarded (or set to background value)"""
-        gra = rgb2gray(self.image)
-        edge_map = canny(gra, sigma=1, low_threshold=0, high_threshold=1, mask=None)
-        idxs = argwhere(edge_map == 1)
-        box_xmin = min(idxs[:, 0]) - self.box_safe_margin
-        box_xmax = max(idxs[:, 0]) + self.box_safe_margin
-        box_ymin = min(idxs[:, 1]) - self.box_safe_margin
-        box_ymax = max(idxs[:, 1]) + self.box_safe_margin
-        box_x = array([box_xmin, box_xmin, box_xmax, box_xmax])
-        box_y = array([box_ymin, box_ymax, box_ymax, box_ymin])
-        polygon(box_x, box_y)
-        box = polygon2mask(gra.shape, list(zip(box_x, box_y)))
-        self.labels[box == 0] = 0
-
-    def filter_box_by_hough(self, sigma:int=5):
-        """This method is meant to be used to remove all labels outisde the box floor (e.g. on the background).
-        To do that, it finds the grayscale pixel intensity that occurs the most after blurring the image with a large kernel,
-        threshold the image below that value, and discard all labels outiside the thresholded area.
-        Note: the method overwrite the label matrix with a new label, where
-        all segments on the box walls are discarded (or set to background value)"""
-        plt.figure()
-        image_g = rgb2gray(self.image)
-        grad = canny(image_g, sigma=sigma)
-        grad[int(self.image_lx*0.1):int(self.image_lx*0.9), int(self.image_ly*0.1):int(self.image_ly*0.9)] = 0
-        hspace, angles, dists = hough_line(grad)
-        accum, angles, dists = hough_line_peaks(hspace, angles, dists, min_distance=0, min_angle=0, num_peaks=4, threshold=0.1*hspace.max())
-        for angle, dist in zip(angles, dists):
-            (x0, y0) = dist * array([cos(angle), sin(angle)])
-            plt.axline((x0, y0), slope=tan(angle + pi/2), linewidth=2)
-
-        #idxs = argwhere(gra == floor_val)
-        # box_xmin = min(idxs[:, 0]) #- self.box_safe_margin
-        # box_xmax = max(idxs[:, 0]) #+ self.box_safe_margin
-        # box_ymin = min(idxs[:, 1]) #- self.box_safe_margin
-        # box_ymax = max(idxs[:, 1]) #+ self.box_safe_margin
-        # box_x = array([box_xmin, box_xmin, box_xmax, box_xmax])
-        # box_y = array([box_ymin, box_ymax, box_ymax, box_ymin])
-        # polygon(box_x, box_y)
-        # box = polygon2mask(gra.shape, list(zip(box_x, box_y)))
-        # self.image = self.image[box_xmin:box_xmax, box_ymin:box_ymax, :]
-
-    '''Methods: *** IMAGE INFO & STATISTICS ***'''
-
-    def get_image_info(self):
-            print(f"Image path: {self.path_image}\n"
-                  f"Aspect ratio {self.image_aspect_ratio:.1f}\n"
-                  f"Lenght X: {self.image_lx} px, Delta X: {self.image_dx:.4f} px\n"
-                  f"Length Y: {self.image_ly} px, Delta Y: {self.image_dy:.4f} px\n"
-                  f"Characteristic dimension: {self.characteristic_dimension} px")
-
-    def pixel_stats_rgb(self, n_bins_rgb=100, plot:bool=False, save:bool=False):
-        plt.figure()
-        r = plt.hist(self.image[:, :, 0].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="red")
-        g = plt.hist(self.image[:, :, 1].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="green")
-        b = plt.hist(self.image[:, :, 2].flatten(), range=(0, 255), bins=n_bins_rgb, log=False, alpha=0.25, color="blue")
-        if save:
-            plt.savefig(f"{os.getcwd()}/{self.image_name}, pixel rgb histogram.png", dpi=1200)
-        if plot:
-            plt.show()
-        plt.close()
-        return r, g, b
-
-    def pixel_stats_grayscale(self, n_bins_grayscale=100, plot:bool=False, save:bool=False):
-        g = plt.hist(rgb2gray(self.image).flatten(), range=(0, 1), bins=n_bins_grayscale, log=False)
-        if save:
-            plt.savefig(f"{os.getcwd()}/{self.image_name}, pixel grayscale histogram.png", dpi=1200)
-        if plot:
-            plt.show()
-        plt.close()
-        return g
-
-    '''Methods: *** LABELS STATISTICS ***'''
-
-    def hist_labels_geometry(self, plot:bool=True):
-        """Generate histrograms data and plots for labels area and eccentricity"""
-        regions = regionprops(self.labels)
-        area = zeros(len(regions))
-        ecce = zeros(len(regions))
-        for idx, region in enumerate(regions):
-            area[idx] = region.area
-            ecce[idx] = region.eccentricity
-        if plot is True:
-            plt.figure()
-            plt.hist(x=area, bins=100)
-            plt.figure()
-            plt.hist(x=ecce, bins=100)
-        return area, ecce
-
-    '''Methods: *** UTILITIES ***'''
 
     def update_attributes(self):
         """Update image attributes. Might be useful if: e.g. the image is rescaled."""
