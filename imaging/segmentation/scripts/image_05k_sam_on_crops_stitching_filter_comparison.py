@@ -12,9 +12,9 @@ from skimage.draw import polygon, polygon_perimeter, polygon2mask
 from skimage.measure import label, regionprops
 from skimage.exposure import rescale_intensity
 
-DATA_PATH = r"C:\tierspital\data processed\photos\segmentation sam"
+DATA_PATH = r"T:\data processed\optical images\segmentation sam\batch00"
 OUTPUT_PATH = DATA_PATH
-IMAGE_PATH = r"C:\tierspital\data raw\photos"
+IMAGE_PATH = r"T:\data raw\optical images\batch00"
 
 IMAGE = linspace(1, 14, 14, dtype=int)
 MODEL = ["vit_b", "vit_l", "vit_h"]
@@ -48,28 +48,27 @@ for k, image in enumerate(IMAGE):
                 labels = pickle.load(reader)
             with open(rf"{OUTPUT_PATH}\{image:02d}.jpg, {model}, {point_per_side}, labels filtered.dat", "rb") as reader:
                 labels_filtered = pickle.load(reader)
-
-            # find differences
-            difference = zeros_like(labels)
-            difference[(labels_filtered == 0) & (labels_filtered != labels)] = labels[(labels_filtered == 0) & (labels_filtered != labels)]
-            difference = label(difference)
-
             plt.figure()
-            image_label_overlay = label2rgb(difference, img, alpha=0.5, bg_label=0, bg_color=None, kind="overlay")
+            image_label_overlay = label2rgb(labels_filtered, img, alpha=0.5, bg_label=0, bg_color=None, kind="overlay")
             plt.imshow(image_label_overlay)
             plt.axis("off")
-            #plt.title(f"Number of segments: {int(len(unique(labels)))}")
+            plt.title(f"Number of segments: {int(len(unique(labels_filtered)))}")
             plt.tight_layout()
+            regions = regionprops(labels_filtered)
+            for region in regions:
+                if not 20 <= region.area <= inf:
+                    labels_filtered[labels_filtered == region.label] = 0
+                if region.eccentricity < 0.7 and region.area > 100:
+                    labels_filtered[labels_filtered == region.label] = 0
+            labels_filtered = label(labels_filtered, connectivity=1)  # re-label label matrix
 
             ax = plt.gca()
-            regions = regionprops(difference)
+            regions = regionprops(labels_filtered)
             for region in regions:
                 minr, minc, maxr, maxc = region.bbox
                 rect = mpatches.Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.2)
                 ax.add_patch(rect)
 
-            plt.title(rf"$Delta$: {int(len(unique(difference)))}")
-            plt.tight_layout()
 
-            plt.savefig(rf"{OUTPUT_PATH}\segments with box filtered difference,{image:02d}.jpg,{model},{point_per_side}.png", dpi=1200, bbox_inches='tight')
+            plt.savefig(rf"{OUTPUT_PATH}\{image:02d}.jpg,{model},{point_per_side}.png", dpi=1200, bbox_inches='tight')
             plt.close()
