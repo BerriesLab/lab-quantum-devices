@@ -1,9 +1,12 @@
 from scipy.constants import h, hbar, Boltzmann as kb, pi, e, m_e, epsilon_0
 from numpy import sqrt, exp, inf, heaviside
 
+"""Redifine constants in units of eV"""
+kb = kb / e #
+
 def f_FD(E, E_F, T):
     """Fermi-Dirac distribution"""
-    return 1 / (1 + exp((E - E_F) / (kb * T)))
+    return 1 / (1 + exp((E - E_F) / (kb / e * T)))
 
 def D_1D(E, E_C):
     """

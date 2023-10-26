@@ -5,7 +5,7 @@ from skimage.color import label2rgb
 from skimage.measure import label, regionprops
 from skimage.exposure import rescale_intensity
 from matplotlib.patches import Rectangle
-from numpy import max, min, rint, all, uint8, argwhere
+from numpy import max, min, rint, uint8, argwhere
 
 box_safe_margin = 50
 voxelXSize = 200 # px
@@ -15,32 +15,42 @@ nCrops = 50 # px
 PATH_DATA = r"T:\data raw\ct\training data"
 ctData = nib.load(rf"{PATH_DATA}\ct_scan.nii.gz")
 ctLabels = nib.load(rf"{PATH_DATA}\segmentation.nii.gz")
-print(f"CT scan input shape: {ctData.shape}")
+print(f"CT scan data shape: {ctData.shape}")
+print(f"CT scan labels shape: {ctData.shape}")
 
-"""chop the volume that includes the segmentation only"""
+"""chop the volume that includes the segmentation only.
+   None: the segmentation labels '1' any worm and '0' all the rest."""
 sgm = rint(ctLabels.get_fdata()).astype(uint8)
 idxs = argwhere(sgm == 1)
+# Get xmin, xmax, ymin, ymax, zmin, zmax
 xmin = min(idxs[:, 0]) - box_safe_margin if min(idxs[:, 0]) - box_safe_margin >= 0 else 0
 xmax = max(idxs[:, 0]) + box_safe_margin if min(idxs[:, 0]) - box_safe_margin <= ctLabels.shape[0] else ctLabels.shape[0]
 ymin = min(idxs[:, 1]) - box_safe_margin if min(idxs[:, 1]) - box_safe_margin >= 0 else 0
 ymax = max(idxs[:, 1]) + box_safe_margin if min(idxs[:, 1]) - box_safe_margin <= ctLabels.shape[1] else ctLabels.shape[1]
 zmin = min(idxs[:, 2]) - box_safe_margin if min(idxs[:, 2]) - box_safe_margin >= 0 else 0
 zmax = max(idxs[:, 2]) + box_safe_margin if min(idxs[:, 2]) - box_safe_margin <= ctLabels.shape[2] else ctLabels.shape[2]
+# Get pixel intensity imax, imin
 imax = max(ctData.slicer[xmin:xmax, ymin:ymax, zmin:zmax].get_fdata())
 imin = min(ctData.slicer[xmin:xmax, ymin:ymax, zmin:zmax].get_fdata())
-print(f"CT scan with labels shape: {ctData.shape}")
+# update the volumes
+ctData = ctData.slicer[xmin:xmax, ymin:ymax, zmin:zmax]
+ctLabels = ctLabels.slicer[xmin:xmax, ymin:ymax, zmin:zmax]
+print(f"New CT scan data shape: {ctData.shape}")
+print(f"New CT scan labels shape: {ctData.shape}")
 
+# generate crops
 for idx in range(0, nCrops):
     # define the coordinates of the crop corner.
-    # Note: crops are new volumes and therefore theis coordinates start from 0
-    x = random.randint(xmin, xmax - voxelXSize)
-    y = random.randint(ymin, ymax - voxelYSize)
-    z = random.randint(zmin, zmax - voxelZSize)
+    # Note: crops are new volumes and therefore their coordinates start from 0
+    x = random.randint(0, ctData.shape[0] - voxelXSize)
+    y = random.randint(0, ctData.shape[1] - voxelYSize)
+    z = random.randint(0, ctData.shape[2] - voxelZSize)
     # slice image and labels, and retrieve data
-    print(f"Crop CT scan {idx:02d}: x[{x}, {x+voxelXSize}], y[{y}, {y+voxelYSize}], z[{z}, {z+voxelZSize}]")
+    print(f"Crop CT scan {idx:02d}: x[{x}:{x+voxelXSize}], y[{y}:{y+voxelYSize}], z[{z}:{z+voxelZSize}]")
     ctDataCrop = ctData.slicer[x:x+voxelXSize, y:y+voxelYSize, z:z+voxelZSize]
     ctLabelsCrop = ctLabels.slicer[x:x+voxelXSize, y:y+voxelYSize, z:z+voxelZSize]
     img = ctDataCrop.get_fdata()
+    print(f"Crop shape: {img.shape}")
     sgm = rint(ctLabelsCrop.get_fdata()).astype(uint8)
 
     fig, ax = plt.subplots(2, 3)
@@ -87,17 +97,17 @@ for idx in range(0, nCrops):
     regions = regionprops(labelsCropX)
     for region in regions:
         minr, minc, maxr, maxc = region.bbox
-        rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+        rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
         ax[1, 0].add_patch(rect)
     regions = regionprops(labelsCropY)
     for region in regions:
         minr, minc, maxr, maxc = region.bbox
-        rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+        rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
         ax[1, 1].add_patch(rect)
     regions = regionprops(labelsCropZ)
     for region in regions:
         minr, minc, maxr, maxc = region.bbox
-        rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=1)
+        rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
         ax[1, 2].add_patch(rect)
 
     plt.tight_layout()
