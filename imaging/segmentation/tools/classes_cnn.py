@@ -20,11 +20,12 @@ class MealwormsCTDataset(Dataset):
         path_label = sample['label']
         image = nib.load(path_image).get_fdata()
         label = nib.load(path_label).get_fdata()
+        print(image.shape, label.shape)
         if self.transform:
             image = self.transform(image)
             label = self.transform(label)
+        print(image.shape, label.shape)
         return image, label
-
 
 # Define your CNN architecture by creating a class that inherits from nn.Module.
 # This class should include the layers and operations you want in your CNN.
