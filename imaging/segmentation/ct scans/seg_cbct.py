@@ -1,62 +1,36 @@
 import SimpleITK as sitk
 import os
-from utils import WormCounter
+from worm_seg_utils import WormCounter
 
 morph_stats = {'id': [], 'max_length (mm)': []}
-os.chdir("C:/tierspital/")  # set current working directory
-input_im = sitk.ReadImage(os.getcwd()+"/data raw/cropped_volumes/3_Lunge_medium.nii.gz")  # Load image
 
-#working_dir = r'./working_dir_worm'
+input_im = sitk.ReadImage(r'D:\Meelworms\data\CT_comparison\CBCT_Box2.nii.gz')
+working_dir = r'.\working_dir_CBCT'
 
-# input_im = sitk.ReadImage(r'../../nii/3_Lunge_box.nii.gz')
-# working_dir = r'./working_dir_worm_full'
+# input_im = sitk.ReadImage(r'../data/3_Lunge_box.nii.gz')
+# working_dir = r'../data/working_dir_worm_full'
 
-print("Inititing 'worm object'... ", end="")
-worm_counter = WormCounter(input_im, os.getcwd()+"/data processed")  # Initate object
-print("Done.")
+worm_counter = WormCounter(input_im, working_dir)
 
-print("Setting filter... ", end="")
-no_filter = sitk.Cast(input_im * 0 + 1, sitk.sitkUInt8)
-box_filter = worm_counter.box_filter(x_min=35, x_max=995, y_min=240, y_max=450, z_min=20, z_max=1010)
+print('Setting filter')
+no_filter = sitk.Cast(input_im*0+1, sitk.sitkUInt8)
+# box_filter = worm_counter.box_filter(x_min=35, x_max=995, y_min=240, y_max=450, z_min=20, z_max=1010)
 box_filter = no_filter
-print("Done.")
 
-print('Segmentation of the wall')
-wall = worm_counter.wall_remover(selection_filter=no_filter, threshold=-300, minimal_size=2500)
-
-print('Segmentation of the floor')
-floor = worm_counter.floor_remover(selection_filter=sitk.And(no_filter, sitk.Not(wall)), threshold=-350, minimal_size=50)
-box = sitk.BinaryDilate(sitk.Or(floor, wall), [1, 1, 1])
-sitk.WriteImage(box, os.path.join(working_dir, 'box_seg.nii.gz'))
-
-print('Separation of the bright spots')
-bright = worm_counter.bright_remover(selection_filter=box_filter, threshold_1=150, threshold_2=-500)
-print('Finding seeds of bright spots')
-seeds_bright = worm_counter.bright_remover(selection_filter=box_filter, threshold_1=100, threshold_2=100)
-seeds_bright = sitk.ConnectedComponent(seeds_bright)
-sitk.WriteImage(seeds_bright, os.path.join(working_dir, 'bright_seeds_seg.nii.gz'))
-print('Segmentation of the bright spots')
-bright_seg, bright_leftover = worm_counter.ws(bright, seeds_bright, radius=0, minimal_size=6)
-sitk.WriteImage(bright_seg, os.path.join(working_dir, 'bright_seg.nii.gz'))
-sitk.WriteImage(bright_leftover, os.path.join(working_dir, 'bright_leftover_seg.nii.gz'))  # this should be empty or almost empty
-
-print('Statistics calculation for the bright spots')
-shape_stats_b, csv_file_name_b = worm_counter.perform_count(bright_seg, ground_truth=False, individual=None, name_csv="stats_bright.csv", name_png="stats_bright_plot.png")
-
-print('Separation of worms')
-box_and_bright = sitk.Or(bright, box)
-worms = worm_counter.thresh_and_clean(selection_filter=sitk.And(box_filter, sitk.Not(box_and_bright)), threshold=-350, minimal_size=10) # originally -500
+worms = worm_counter.thresh_and_clean(selection_filter=box_filter, threshold=300, minimal_size=10) # originally -500
 print('Finding seeds of worms')
-seeds_worm = worm_counter.thresh_and_clean(selection_filter=sitk.And(box_filter, sitk.Not(box_and_bright)), threshold=-150, minimal_size=0)
-seeds_worm = worm_counter.divide(seeds_worm, cutting_size=1000, threshold_old=-150, split_twins=50, min_object_sz=6)
+seeds_worm = worm_counter.thresh_and_clean(selection_filter=box_filter, threshold=700, minimal_size=0)
+# sitk.WriteImage(seeds_worm, os.path.join(working_dir, 'worms_seeds1_seg.nii.gz'))
+seeds_worm = worm_counter.divide(seeds_worm, cutting_size=1000, threshold_old=300, split_twins=50, min_object_sz=6)
+# sitk.WriteImage(seeds_worm, os.path.join(working_dir, 'worms_seeds2_seg.nii.gz'))
 seeds_worm = worm_counter.divide(seeds_worm, min_object_sz=6)
-sitk.WriteImage(seeds_worm, os.path.join(working_dir, 'worms_seeds_seg.nii.gz'))
+sitk.WriteImage(seeds_worm, os.path.join(working_dir, 'worms_seeds3_seg.nii.gz'))
 print('Segmentation of worms')
 worms_seg, worm_leftover = worm_counter.ws(worms, seeds_worm, radius=1, minimal_size=6)
 worms_seg = worm_counter.combine(worms_seg, worm_leftover)
 
-worms_done2, worms_seg2 = worm_counter.split_divide_combine(worms_seg, cut_limit=1400, threshold=-115, minimal_size=11, minimal_size_ws=6)
-worms_done3, worms_seg3 = worm_counter.split_divide_combine(worms_seg2, cut_limit=1800, threshold=-80, minimal_size=5, minimal_size_ws=6)
+worms_done2, worms_seg2 = worm_counter.split_divide_combine(worms_seg, cut_limit=1400, threshold=500, minimal_size=11, minimal_size_ws=6)
+worms_done3, worms_seg3 = worm_counter.split_divide_combine(worms_seg2, cut_limit=1800, threshold=600, minimal_size=5, minimal_size_ws=6)
 
 worm_seg_final = worm_counter.combine(worm_counter.combine(worms_done2, worms_done3), worms_seg3)
 sitk.WriteImage(worm_seg_final, os.path.join(working_dir, 'worms_seg.nii.gz'))
