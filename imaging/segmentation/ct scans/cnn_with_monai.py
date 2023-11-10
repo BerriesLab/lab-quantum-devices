@@ -46,7 +46,7 @@ params = {# DATA
           'intensity_min': -1000, # min voxel intensity value of CT scan
           'intensity_max': +1000, # max voxel intensity value of Ct scan
           'loss_function': DiceLoss(sigmoid=True), # loss function
-          "dice_metric": DiceMetric(include_background=True), # define loss metric for the validation
+          "dice_metric": DiceMetric(include_background=False), # define loss metric for the validation
           # PLOTTING
           "n_crops": 5,
 }
@@ -130,6 +130,9 @@ if params["optimizer"] == 0:
     optimizer = torch.optim.AdamW(model.parameters(), lr=params['learning_rate'], weight_decay=params['weight_decay'])
 dice_score_best = -1 # initialize best_metric so that the 1st validation will result the best
 model.train() # set the model to training. This has effect only on some transforms
+xs = np.array([random.randint(0, 200) for _ in range(params["n_crops"])])
+ys = np.array([random.randint(0, 200) for _ in range(params["n_crops"])])
+zs = np.array([random.randint(0, 200) for _ in range(params["n_crops"])])
 for epoch in range(params["n_epochs_trn"]):
     epoch_loss = 0
     epoch_trn_iterator= tqdm.tqdm(loader_trn, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True)
@@ -185,11 +188,13 @@ for epoch in range(params["n_epochs_trn"]):
             torch.save(model.state_dict(), f"{params['dir_data_val']}\\experiment {params['experiment'].strftime('%Y.%m.%d %H.%M.%S')} - iteration {epoch+1:03d} - model.pth")
 
             # Plot the input image, ground truth, and predicted output
+            #IMPORTANT!!!! extend validation to all batch:
+            # for step_val, batch_val in enumerate(epoch_val_iterator):
+            #   images_val, labels_val = batch_val["image"].to(device), batch_val["label"].to(device)
+            #   prediction_val = model(images_val)
+            prediction_val = model(images_val)
             ret_lbl = blend_images(image=images_val[0], label=labels_val[0], alpha=0.3, cmap="hsv", rescale_arrays=False)
             ret_prd = blend_images(image=images_val[0], label=prediction_val[0], alpha=0.3, cmap="hsv", rescale_arrays=False)
-            xs = np.array([random.randint(0, images_val.shape[2]) for _ in range(params["n_crops"])])
-            ys = np.array([random.randint(0, images_val.shape[3]) for _ in range(params["n_crops"])])
-            zs = np.array([random.randint(0, images_val.shape[4]) for _ in range(params["n_crops"])])
             for i in range(params["n_crops"]):
                 fig, axs = plt.subplots(2, ncols=3)
                 # find a random point inside the image
