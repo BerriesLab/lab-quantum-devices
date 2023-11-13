@@ -12,7 +12,7 @@ voxelXSize = 200 # px
 voxelYSize = 200 # px
 voxelZSize = 200 # px
 nCrops = 50 # px
-PATH_DATA = r"T:\data raw\ct\training data"
+PATH_DATA = r"C:\Users\dabe\Desktop\ct\training_data"
 ctData = nib.load(rf"{PATH_DATA}\ct_scan.nii.gz")
 ctLabels = nib.load(rf"{PATH_DATA}\segmentation.nii.gz")
 print(f"CT scan data shape: {ctData.shape}")

@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 import os
 import glob
 import random
@@ -9,23 +8,22 @@ import nibabel
 import tqdm
 import datetime
 from monai.networks.nets import UNet
-from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, AsDiscrete
-from monai.data import CacheDataset, DataLoader, decollate_batch
+from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged
+from monai.data import CacheDataset, DataLoader
 from monai.losses import DiceLoss
 from monai.metrics import DiceMetric
-from monai.visualize import plot_2d_or_3d_image, blend_images, matshow3d
-from monai.inferers import sliding_window_inference
+from monai.visualize import blend_images
 
 # define parameters
 params = {# DATA
-          "dir_data_trn": 'C:\\Users\\dabe\\Desktop\\ct\\training_data', # It includes images and labels
-          "dir_data_val": 'C:\\Users\\dabe\\Desktop\\ct\\validation_data', # It includes images and labels
+          "dir_data_trn": 'C:\\Users\\dabe\\Desktop\\ct\\dataset_trn', # It includes images and labels
+          "dir_data_val": 'C:\\Users\\dabe\\Desktop\\ct\\dataset_val', # It includes images and labels
           "experiment": datetime.datetime.now(), # datetime of the experiment
           "trn_ratio": 0.7, # percentage of data used for training
           "val_ratio": 0.15, # percentage of data used for validating
           "tst_ratio": 0.15, # percentage of data used for testing
           "data_percentage": 0.3, # percentage of data to use
-          'batch_trn_size': 2, # number of data per batch
+          'batch_trn_size': 1, # number of data per batch
           'batch_val_size': 1, # number of data per batch
           'batch_tst_size': 1, # number of data per batch
           'set_trn': {}, # list of dictionary for training the model (compiled by script)
@@ -54,8 +52,8 @@ params = {# DATA
 #region STEP1: build dataset.
 # Each sample is a dictionary with (image path, labels path), and no actual data
 # define training and validation dataset
-path_images = sorted(glob.glob(os.path.join(params["dir_data_trn"], "*img.nii.gz")))
-path_labels = sorted(glob.glob(os.path.join(params["dir_data_trn"], "*lbl.nii.gz")))
+path_images = sorted(glob.glob(os.path.join(params["dir_data_trn"], "img", "*.nii.gz")))
+path_labels = sorted(glob.glob(os.path.join(params["dir_data_trn"], "sgm", "*.nii.gz")))
 path_dicts = [{"image": image_name, "label": label_name} for image_name, label_name in zip(path_images, path_labels)]
 # select subset of data
 if params["data_percentage"] < 1:
@@ -114,8 +112,8 @@ model = UNet(
     spatial_dims=3,
     in_channels=1,
     out_channels=params["n_classes"],
-    channels=(64, 128, 256), #sequence of channels. Top block first. The length of channels should be no less than 2
-    strides=(2, 2,), # sequence of convolution strides. The length of stride should equal to len(channels) - 1.
+    channels=(64, 128, 256, 512), #sequence of channels. Top block first. The length of channels should be no less than 2
+    strides=(2, 2, 2), # sequence of convolution strides. The length of stride should equal to len(channels) - 1.
     kernel_size=params["kernel_size"], #convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
     up_kernel_size=params["up_kernel_size"], #upsampling convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
     num_res_units=1,#– number of residual units. Defaults to 0.
@@ -189,35 +187,34 @@ for epoch in range(params["n_epochs_trn"]):
 
             # Plot the input image, ground truth, and predicted output
             #IMPORTANT!!!! extend validation to all batch:
-            # for step_val, batch_val in enumerate(epoch_val_iterator):
-            #   images_val, labels_val = batch_val["image"].to(device), batch_val["label"].to(device)
-            #   prediction_val = model(images_val)
-            prediction_val = model(images_val)
-            ret_lbl = blend_images(image=images_val[0], label=labels_val[0], alpha=0.3, cmap="hsv", rescale_arrays=False)
-            ret_prd = blend_images(image=images_val[0], label=prediction_val[0], alpha=0.3, cmap="hsv", rescale_arrays=False)
-            for i in range(params["n_crops"]):
-                fig, axs = plt.subplots(2, ncols=3)
-                # find a random point inside the image
-                x = xs[i]
-                y = ys[i]
-                z = zs[i]
-                axs[0, 0].set_title(f"YZ plane at X = {x} px")
-                axs[0, 0].imshow(torch.moveaxis(ret_lbl[:, :, :, z], 0, -1))
-                axs[1, 0].imshow(torch.moveaxis(ret_prd[:, :, :, z], 0, -1))
-                axs[0, 1].set_title(f"XZ plane at Y = {y} px")
-                axs[0, 1].imshow(torch.moveaxis(ret_lbl[:, :, y, :], 0, -1))
-                axs[1, 1].imshow(torch.moveaxis(ret_prd[:, :, y, :], 0, -1))
-                axs[0, 2].set_title(f"XY plane at Z = {z} px")
-                axs[0, 2].imshow(torch.moveaxis(ret_lbl[:, x, :, :], 0, -1))
-                axs[1, 2].imshow(torch.moveaxis(ret_prd[:, x, :, :], 0, -1))
-                # Remove x-axis and y-axis ticks, labels, and tick marks for all subplots
-                for ax in axs.flat:
-                    ax.set_xticks([])
-                    ax.set_yticks([])
-                    ax.set_xticklabels([])
-                    ax.set_yticklabels([])
-                # Adjust layout for better spacing
-                plt.tight_layout()
-                # Save the figure to a file
-                plt.savefig(f"{params['dir_data_val']}\\experiment {params['experiment'].strftime('%Y.%m.%d %H.%M.%S')} - iteration {epoch+1:03d} - xyz {x,y,z}.png", dpi=1200)
+            for step_val, batch_val in enumerate(epoch_val_iterator):
+                images_val, labels_val = batch_val["image"].to(device), batch_val["label"].to(device)
+                prediction_val = model(images_val)
+                ret_lbl = blend_images(image=images_val[0], label=labels_val[0], alpha=0.3, cmap="hsv", rescale_arrays=False)
+                ret_prd = blend_images(image=images_val[0], label=prediction_val[0], alpha=0.3, cmap="hsv", rescale_arrays=False)
+                for i in range(params["n_crops"]):
+                    fig, axs = plt.subplots(2, ncols=3)
+                    # find a random point inside the image
+                    x = xs[i]
+                    y = ys[i]
+                    z = zs[i]
+                    axs[0, 0].set_title(f"YZ plane at X = {x} px")
+                    axs[0, 0].imshow(torch.moveaxis(ret_lbl[:, :, :, z], 0, -1).cpu())
+                    axs[1, 0].imshow(torch.moveaxis(ret_prd[:, :, :, z], 0, -1).cpu())
+                    axs[0, 1].set_title(f"XZ plane at Y = {y} px")
+                    axs[0, 1].imshow(torch.moveaxis(ret_lbl[:, :, y, :], 0, -1).cpu())
+                    axs[1, 1].imshow(torch.moveaxis(ret_prd[:, :, y, :], 0, -1).cpu())
+                    axs[0, 2].set_title(f"XY plane at Z = {z} px")
+                    axs[0, 2].imshow(torch.moveaxis(ret_lbl[:, x, :, :], 0, -1).cpu())
+                    axs[1, 2].imshow(torch.moveaxis(ret_prd[:, x, :, :], 0, -1).cpu())
+                    # Remove x-axis and y-axis ticks, labels, and tick marks for all subplots
+                    for ax in axs.flat:
+                        ax.set_xticks([])
+                        ax.set_yticks([])
+                        ax.set_xticklabels([])
+                        ax.set_yticklabels([])
+                    # Adjust layout for better spacing
+                    plt.tight_layout()
+                    # Save the figure to a file
+                    plt.savefig(f"{params['dir_data_val']}\\experiment {params['experiment'].strftime('%Y.%m.%d %H.%M.%S')} - iteration {epoch+1:03d} - img {step_val+1} - xyz {x,y,z}.png", dpi=1200)
 #endregion
