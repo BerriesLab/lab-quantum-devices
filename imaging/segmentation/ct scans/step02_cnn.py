@@ -30,9 +30,10 @@ params = {# DATA
           'set_val': {}, # list of dictionary for validating the model (compiled by script)
           'set_tst': {}, # list of dictionary for testing the model (compiled by script)
           # MODEL
-          'n_classes': 1, # for this study, the feature is either a mealworm or not
+          "model": 0, # 0: UNet, 1: ResNet
+          'n_classes': 2, # for this study, the feature is either a mealworm or background, i.e. 2 classes
           'kernel_size': 3, # size of the convolutional kernel (in pixels)
-          "up_kernel_size": 3,
+          "up_kernel_size": 3, # size of the upsaling kernel
           "activation_function": torch.nn.ReLU(),
           "dropout_ratio": 0,
           'learning_rate': 1e-3, # learning rate of the Adam optimizer
@@ -46,15 +47,15 @@ params = {# DATA
           'loss_function': DiceLoss(sigmoid=True), # loss function
           "dice_metric": DiceMetric(include_background=False), # define loss metric for the validation
           # PLOTTING
-          "n_crops": 5,
+          "n_crops": 1, # if n_crops = 1 then plot xy, yz, zx planes passing through the center of the validation sample
 }
 
 #region STEP1: build dataset.
 # Each sample is a dictionary with (image path, labels path), and no actual data
 # define training and validation dataset
-path_images = sorted(glob.glob(os.path.join(params["dir_data_trn"], "img", "*.nii.gz")))
-path_labels = sorted(glob.glob(os.path.join(params["dir_data_trn"], "sgm", "*.nii.gz")))
-path_dicts = [{"image": image_name, "label": label_name} for image_name, label_name in zip(path_images, path_labels)]
+path_img = sorted(glob.glob(os.path.join(params["dir_data_trn"], "img*.nii.gz")))
+path_lbl = sorted(glob.glob(os.path.join(params["dir_data_trn"], "sgm*.nii.gz")))
+path_dicts = [{"image": image_name, "label": label_name} for image_name, label_name in zip(path_img, path_lbl)]
 # select subset of data
 if params["data_percentage"] < 1:
     path_dicts = path_dicts[:int(len(path_dicts) * params["data_percentage"])]
