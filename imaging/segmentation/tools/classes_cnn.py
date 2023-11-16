@@ -80,8 +80,8 @@ class NNMealworms:
         torch.save(self.model, path)
 
     # load whole model
-    def load_model(self, path_to_model, ):
-        self.model = torch.load(path_to_model, map_location=self.device)
+    def load_model(self, model):
+        self.model = torch.load(os.path.join("model", model), map_location=self.device)
 
     # save parameters (including dataset dictionaries)
     def save_params(self):
@@ -89,8 +89,8 @@ class NNMealworms:
             pickle.dump(self.params, file)
 
     # save parameters
-    def load_params(self, file_path):
-        with open(file_path, 'rb') as file:
+    def load_params(self, params):
+        with open(params, 'rb') as file:
             self.params = pickle.load(file)
 
     # define the transformation for the training dataset
