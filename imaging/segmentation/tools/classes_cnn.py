@@ -6,23 +6,24 @@ import torch
 import nibabel as nib
 import tqdm
 import datetime
+import pickle
 from monai.networks.nets import UNet
 from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, AsDiscreted, AsDiscrete
-from monai.inferers import sliding_window_inference
 from monai.data import CacheDataset, DataLoader, decollate_batch
+from monai.inferers import sliding_window_inference
 from monai.losses import DiceLoss
 from monai.metrics import DiceMetric
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from matplotlib.animation import FuncAnimation
 from skimage.color import label2rgb
 from skimage.measure import label, regionprops
 from skimage.exposure import rescale_intensity
 
+
 class NNMealworms:
     def __init__(self):
-        self.params = {"dir_data_trn": 'D:\\mealworm\\ct\\dataset_trn', # It includes images and labels
-                       "dir_data_val": 'D:\\mealworm\\ct\\dataset_val', # It includes images and labels
+        # The class assumes data are stored in main folder -> [data, dataset, model,...]
+        self.params = {"dir_main": os.getcwd(),
                        "experiment": datetime.datetime.now().strftime('%Y.%m.%d %H.%M.%S'), # datetime of the experiment
                        "data_percentage": 1, # percentage of data to use
                        "dataset_trn_ratio": 0.7, # percentage of data used for training
@@ -38,7 +39,6 @@ class NNMealworms:
                        'dy': 0.3,
                        'dz': 0.4,
                        # MODEL
-                       "model": 0, # 0: UNet, 1: ResNet
                        'n_classes': 2, # for this study, the feature is either a mealworm or background, i.e. 2 classes
                        'kernel_size': 3, # size of the convolutional kernel (in pixels)
                        "up_kernel_size": 3, # size of the upsaling kernel
@@ -46,9 +46,8 @@ class NNMealworms:
                        "dropout_ratio": 0,
                        'learning_rate': 1e-3, # learning rate of the Adam optimizer
                        'weight_decay': 1e-4, # weight decay of the Adam optimizer
-                       "optimizer": 0, # 0: Adam, 1...
                        # TRAINING - VALIDATION
-                       'max_iteration_trn': 100, # max iteration for training
+                       'max_iteration_trn': 500, # max iteration for training
                        'delta_iteration_trn': 10, # number of iterations in-between validation
                        'intensity_min': -1000, # min voxel intensity value of CT scan
                        'intensity_max': +1000, # max voxel intensity value of Ct scan
@@ -63,9 +62,9 @@ class NNMealworms:
         self.loss_function = None
         self.dice_metric = None
         self.optimizer = None
-        self.epochs = np.linspace(0, self.params["max_iteration_trn"])
-        self.losses = np.zeros_like(self.epochs)
-        self.metrics = np.zeros_like(self.epochs)
+        self.epochs = np.arange(self.params["max_iteration_trn"])
+        self.losses = np.zeros(self.params["max_iteration_trn"])
+        self.metrics = np.zeros(self.params["max_iteration_trn"])
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.check_gpu()
 
@@ -81,8 +80,18 @@ class NNMealworms:
         torch.save(self.model, path)
 
     # load whole model
-    def load_model(self, path_to_model):
-        self.model = torch.load(path_to_model)
+    def load_model(self, path_to_model, ):
+        self.model = torch.load(path_to_model, map_location=self.device)
+
+    # save parameters (including dataset dictionaries)
+    def save_params(self):
+        with open(os.path.join(self.params["dir_main"], "model", f'{self.params["experiment"]} params.dat'), 'wb') as file:
+            pickle.dump(self.params, file)
+
+    # save parameters
+    def load_params(self, file_path):
+        with open(file_path, 'rb') as file:
+            self.params = pickle.load(file)
 
     # define the transformation for the training dataset
     def compose_transforms_trn(self):
@@ -121,8 +130,8 @@ class NNMealworms:
     def build_dataset(self):
         # Each sample is a dictionary with (image path, labels path), and no actual data
         # define training and validation dataset
-        path_images = sorted(glob.glob(os.path.join(self.params["dir_data_trn"], "img*.nii.gz")))
-        path_labels = sorted(glob.glob(os.path.join(self.params["dir_data_trn"], "sgm*.nii.gz")))
+        path_images = sorted(glob.glob(os.path.join(self.params["dir_main"], "dataset", "img*.nii.gz")))
+        path_labels = sorted(glob.glob(os.path.join(self.params["dir_main"], "dataset", "sgm*.nii.gz")))
         path_dicts = [{"img": image_name, "lbl": label_name} for image_name, label_name in zip(path_images, path_labels)]
         # select subset of data
         if self.params["data_percentage"] < 1:
@@ -140,12 +149,15 @@ class NNMealworms:
 
     # cache datasets and generate dataset loaders
     def cache_data(self):
-        dataset_trn = CacheDataset(data=self.params["dataset_trn"], transform=self.transforms_trn)
-        self.loader_trn = DataLoader(dataset_trn, batch_size=self.params["batch_trn_size"])
-        dataset_val = CacheDataset(data=self.params["dataset_val"], transform=self.transforms_val)
-        self.loader_val = DataLoader(dataset_val, batch_size=self.params["batch_val_size"])
-        dataset_tst = CacheDataset(data=self.params["dataset_tst"], transform=self.transforms_tst)
-        self.loader_tst = DataLoader(dataset_tst, batch_size=self.params["batch_tst_size"])
+        if self.params["dataset_trn"]:
+            dataset_trn = CacheDataset(data=self.params["dataset_trn"], transform=self.transforms_trn)
+            self.loader_trn = DataLoader(dataset_trn, batch_size=self.params["batch_trn_size"])
+        if self.params["dataset_val"]:
+            dataset_val = CacheDataset(data=self.params["dataset_val"], transform=self.transforms_val)
+            self.loader_val = DataLoader(dataset_val, batch_size=self.params["batch_val_size"])
+        if self.params["dataset_tst"]:
+            dataset_tst = CacheDataset(data=self.params["dataset_tst"], transform=self.transforms_tst)
+            self.loader_tst = DataLoader(dataset_tst, batch_size=self.params["batch_tst_size"])
 
     # build a UNet model
     def build_model_unet(self):
@@ -177,7 +189,7 @@ class NNMealworms:
         for epoch in range(self.params["max_iteration_trn"]):
             self.model.train()  # set the model to training. This has effect only on some transforms
             epoch_loss = 0
-            epoch_trn_iterator= tqdm.tqdm(self.loader_trn, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True, miniters=1)
+            epoch_trn_iterator = tqdm.tqdm(self.loader_trn, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True, miniters=1)
             for step_trn, batch_trn in enumerate(epoch_trn_iterator):
                 # send the training data to device (GPU)
                 inputs, targets = batch_trn['img'].to(self.device), batch_trn['lbl'].to(self.device)
@@ -197,11 +209,11 @@ class NNMealworms:
             if epoch == 0 or (epoch + 1) % self.params["delta_iteration_trn"] == 0 or (epoch + 1) == self.params["max_iteration_trn"]:
                 dice_score = self.validate(epoch)
                 # Check if this is the best model so far
-                if dice_score > dice_score_:
-                    dice_score_ = dice_score
-                    print(f"Model at iteration n. {epoch+1} outperforms all previous models. Saving...")
-                    torch.save(self.model, f"{self.params['dir_data_val']}\\{self.params['experiment']} iter {epoch+1:03d} mdl.pth")
-                    #self.visualize_results(epoch)
+                #if dice_score > dice_score_:
+                dice_score_ = dice_score
+                print(f"Model at iteration n. {epoch+1} outperforms all previous models. Saving...")
+                torch.save(self.model, os.path.join("model", f"{self.params['experiment']} iter {epoch+1:03d} mdl.pth"))
+                #self.visualize_results(epoch)
 
     # validate model
     def validate(self, epoch):
@@ -222,107 +234,119 @@ class NNMealworms:
                 metric_total += metric
                 metric_mean = metric_total / (step_val+1)
                 epoch_val_iterator.set_description(f"Validate ({epoch + 1} / {self.params['max_iteration_trn']} Steps) (dice={metric_mean:2.5f})")
-            self.metrics[epoch] = metric_mean
-            # reset the status for next validation round
-            self.dice_metric.reset()
-            return metric_mean
+        self.metrics[epoch] = metric_mean
+        # reset the status for next validation round
+        self.dice_metric.reset()
+        return metric_mean
 
-    # plot loss vs epoch
+    # plot training loss vs epoch
     def plot_loss(self, show=False):
         plt.figure()
-        plt.plot(self.epochs, self.losses, lw=2)
+        plt.plot(self.epochs, self.losses, lw=0, ms=6, marker='o', color='black')
         plt.title("Training Loss")
         plt.xlabel("Epoch")
         plt.ylabel("Loss")
         plt.tight_layout()
         if show:
             plt.show()
+        plt.savefig(f"{self.params['dir_model']}\\{self.params['experiment']} loss vs epoch.png")
 
-    # plot metric vs epoch
+    # plot validation metric vs epoch
     def plot_metr(self, show=False):
         plt.figure()
-        plt.plot(self.epochs[self.metrics != 0], self.metrics[self.metrics != 0], lw=2)
+        print(self.metrics)
+        plt.plot(self.epochs[self.metrics != 0], self.metrics[self.metrics != 0], lw=0, ms=6, marker='o', color='black')
         plt.title("Validation Metric")
         plt.xlabel("Epoch")
         plt.ylabel("Metric")
         plt.tight_layout()
         if show:
             plt.show()
+        plt.savefig(f"{self.params['dir_model']}\\{self.params['experiment']} metric vs epoch.png")
 
     # plot segmentation
-    def visualize_results(self, epoch):
-        for step_val, batch_val in enumerate(self.loader_val):
-            img_val, lbl_val = batch_val["img"].to(self.device), batch_val["lbl"].to(self.device)
-            prd_val = self.model(img_val)
+    def testing(self):
+        epoch_tst_iterator = tqdm.tqdm(self.loader_tst, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True, miniters=1)
+        for step_tst, batch_tst in enumerate(epoch_tst_iterator):
+            img_tst, lbl_tst = batch_tst["img"].to(self.device), batch_tst["lbl"].to(self.device)
+            prd_tst = self.model(img_tst)
             # convert tensors from one hot encoding to single channel
-            img_array = batch_val["img"].cpu().numpy()[0, 0, :, :, :]
-            lbl_array_val = torch.argmax(batch_val["lbl"], dim=1).cpu().numpy()[0, :, :, :]
-            lbl_array_prd = torch.argmax(prd_val, dim=1).cpu().numpy()[0, :, :, :]
-            print(f"Plotting sample {step_val}...")
+            img_tst = img_tst[0, 0, :, :, :].cpu().numpy()
+            lbl_tst = torch.argmax(lbl_tst, dim=1)[0, :, :, :].cpu().numpy()
+            lbl_prd = torch.argmax(prd_tst, dim=1)[0, :, :, :].cpu().numpy()
+            print(f"Plotting sample {step_tst}...")
             # Find the (x,y,z) coordinates of the sample center
-            x = int(np.floor(batch_val["img"].shape[2] / 2))
-            y = int(np.floor(batch_val["img"].shape[3] / 2))
-            z = int(np.floor(batch_val["img"].shape[4] / 2))
-            lbl_array_val = label(lbl_array_val, connectivity=1)
-            lbl_array_prd = label(lbl_array_prd, connectivity=1)
+            x = int(np.floor(img_tst.shape[0] / 2))
+            y = int(np.floor(img_tst.shape[1] / 2))
+            z = int(np.floor(img_tst.shape[2] / 2))
+            # run a connectivity analysis on test and prediction
+            lbl_tst = label(lbl_tst, connectivity=1)
+            rgn_tst = regionprops(lbl_tst)
+            n_rgn_tst = len(rgn_tst)
+            lbl_prd = label(lbl_prd, connectivity=1)
+            rgn_prd = regionprops(lbl_prd)
+            n_rgn_prd = len(rgn_prd)
+            print(f"N. regions ground truth: {n_rgn_tst}\n"
+                  f"N. regions prediction: {n_rgn_prd}\n"
+                  f"Relative error (%): {(n_rgn_prd-n_rgn_tst)/n_rgn_tst*100}")
             # Generate overlay images
-            img_array_x = img_array[x, :, :]
-            img_array_y = img_array[:, y, :]
-            img_array_z = img_array[:, :, z]
-            lbl_array_x_val = lbl_array_val[x, :, :]
-            lbl_array_y_val = lbl_array_val[:, y, :]
-            lbl_array_z_val = lbl_array_val[:, :, z]
-            lbl_array_x_prd = lbl_array_prd[x, :, :]
-            lbl_array_y_prd = lbl_array_prd[:, y, :]
-            lbl_array_z_prd = lbl_array_prd[:, :, z]
-            img_label_overlay_x_val = label2rgb(label=lbl_array_x_val, image=rescale_intensity(img_array_x, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_y_val = label2rgb(label=lbl_array_y_val, image=rescale_intensity(img_array_y, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_z_val = label2rgb(label=lbl_array_z_val, image=rescale_intensity(img_array_z, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_x_prd = label2rgb(label=lbl_array_x_prd, image=rescale_intensity(img_array_x, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_y_prd = label2rgb(label=lbl_array_y_prd, image=rescale_intensity(img_array_y, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_z_prd = label2rgb(label=lbl_array_z_prd, image=rescale_intensity(img_array_z, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            #blend = blend_images(image=batch_trn["image"], label=batch_trn["label"], alpha=0.3, cmap="gray", transparent_background=True)
+            img_tst_x = img_tst[x, :, :]
+            img_tst_y = img_tst[:, y, :]
+            img_tst_z = img_tst[:, :, z]
+            lbl_tst_x = lbl_tst[x, :, :]
+            lbl_tst_y = lbl_tst[:, y, :]
+            lbl_tst_z = lbl_tst[:, :, z]
+            lbl_prd_x = lbl_prd[x, :, :]
+            lbl_prd_y = lbl_prd[:, y, :]
+            lbl_prd_z = lbl_prd[:, :, z]
+            img_label_overlay_x_tst = label2rgb(label=lbl_tst_x, image=rescale_intensity(img_tst_x, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+            img_label_overlay_y_tst = label2rgb(label=lbl_tst_y, image=rescale_intensity(img_tst_y, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+            img_label_overlay_z_tst = label2rgb(label=lbl_tst_z, image=rescale_intensity(img_tst_z, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+            img_label_overlay_x_prd = label2rgb(label=lbl_prd_x, image=rescale_intensity(img_tst_x, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+            img_label_overlay_y_prd = label2rgb(label=lbl_prd_y, image=rescale_intensity(img_tst_y, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+            img_label_overlay_z_prd = label2rgb(label=lbl_prd_z, image=rescale_intensity(img_tst_z, out_range=(0, 1)), alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
+            # plot
             fig, axs = plt.subplots(2, ncols=3)
             axs[0, 0].set_title(f"YZ plane at X = {x} px")
-            axs[0, 0].imshow(img_label_overlay_x_val)
+            axs[0, 0].imshow(img_label_overlay_x_tst)
             axs[1, 0].imshow(img_label_overlay_x_prd)
             axs[0, 1].set_title(f"XZ plane at Y = {y} px")
-            axs[0, 1].imshow(img_label_overlay_y_val)
+            axs[0, 1].imshow(img_label_overlay_y_tst)
             axs[1, 1].imshow(img_label_overlay_y_prd)
             axs[0, 2].set_title(f"XY plane at Z = {z} px")
-            axs[0, 2].imshow(img_label_overlay_z_val)
+            axs[0, 2].imshow(img_label_overlay_z_tst)
             axs[1, 2].imshow(img_label_overlay_z_prd)
             # Adjust layout for better spacing
             plt.tight_layout()
             # Save the figure to a file
-            plt.savefig(os.path.join(self.params["dir_data_val"], f"{self.params['experiment']} iter {epoch+1:03d} img {step_val:02d} xyz {x, y, z}.png"), dpi=1200)
-            #Add rectangles around regions
-            regions = regionprops(lbl_array_x_val)
+            plt.savefig(os.path.join("model", f"{self.params['experiment']} img {step_tst:02d} xyz {x, y, z}.png"), dpi=1200)
+            # Add rectangles around regions
+            regions = regionprops(lbl_tst_x)
             for region in regions:
                 minr, minc, maxr, maxc = region.bbox
                 rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
                 axs[0, 0].add_patch(rect)
-            regions = regionprops(lbl_array_y_val)
+            regions = regionprops(lbl_tst_y)
             for region in regions:
                 minr, minc, maxr, maxc = region.bbox
                 rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
                 axs[0, 1].add_patch(rect)
-            regions = regionprops(lbl_array_z_val)
+            regions = regionprops(lbl_tst_z)
             for region in regions:
                 minr, minc, maxr, maxc = region.bbox
                 rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
                 axs[0, 2].add_patch(rect)
-            regions = regionprops(lbl_array_x_prd)
+            regions = regionprops(lbl_prd_x)
             for region in regions:
                 minr, minc, maxr, maxc = region.bbox
                 rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
                 axs[1, 0].add_patch(rect)
-            regions = regionprops(lbl_array_y_prd)
+            regions = regionprops(lbl_prd_y)
             for region in regions:
                 minr, minc, maxr, maxc = region.bbox
                 rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
                 axs[1, 1].add_patch(rect)
-            regions = regionprops(lbl_array_z_prd)
+            regions = regionprops(lbl_prd_z)
             for region in regions:
                 minr, minc, maxr, maxc = region.bbox
                 rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
@@ -334,5 +358,43 @@ class NNMealworms:
                 ax.set_xticklabels([])
                 ax.set_yticklabels([])
             # Save the figure to a file
-            plt.savefig(os.path.join(self.params["dir_data_val"], f"{self.params['experiment']} iter {epoch+1:03d} img {step_val:02d} xyz {x, y, z} box.png"), dpi=1200)
+            plt.savefig(os.path.join("model", f"{self.params['experiment']} img {step_tst:02d} xyz {x, y, z} box.png"), dpi=1200)
             plt.close()
+
+    # load a lage ct scan and segment
+    def segment(self, path_img, path_lbl):
+        path_dict = [{"image": path_img, "label": path_lbl}]
+        # Define transforms for loading and preprocessing the NIfTI files
+        transforms = Compose([
+            #CropLabelledVolumed(keys=["image", "label"]),
+            LoadImaged(keys=["image", "label"]),
+            EnsureChannelFirstd(keys=["image", "label"]),
+            # Spacingd(keys=["image", "label"], pixdim=(dx, dy, dz), mode=("bilinear", "nearest")),
+            OrientationD(keys=["image", "label"], axcodes="RAS"),
+            ScaleIntensityRanged(keys=["image"], a_min=self.params['intensity_min'], a_max=self.params['intensity_max'], b_min=0.0, b_max=1.0, clip=True),
+        ])
+        dataset = CacheDataset(data=path_dict, transform=transforms)
+        loader = DataLoader(dataset)
+
+        for step_val, batch_val in enumerate(loader):
+            img_inp, lbl_inp = batch_val["img"].to(self.device), batch_val["lbl"].to(self.device)
+            # run inference window
+            roi_size = (128, 128, 128)
+            sw_batch_size = 4
+            lbl_prd = sliding_window_inference(img_inp, roi_size, sw_batch_size, self.model)
+            lbl_prd = [AsDiscrete(threshold=0.5)(lbl) for lbl in decollate_batch(lbl_prd)]
+            lbl_inp = [AsDiscrete(threshold=0.5)(lbl) for lbl in decollate_batch(lbl_inp)]
+            # convert tensors from one hot encoding to single channel
+            lbl_out = torch.argmax(lbl_prd, dim=1).cpu().numpy()[0, :, :, :]
+            #nib.save(os.path.join(self.params["dir_model"], f'{self.params["experiment"]} params.dat')
+            #img_array = lbl_inp.cpu().numpy()[0, 0, :, :, :]
+
+            #lbl_array_prd = torch.argmax(prd_val, dim=1).cpu().numpy()[0, :, :, :]
+            print(f"Plotting sample {step_val}...")
+            # Find the (x,y,z) coordinates of the sample center
+            #lbl_array_val = label(lbl_array_val, connectivity=1)
+            #lbl_array_prd = label(lbl_array_prd, connectivity=1)
+            # Generate overlay images
+
+            #plt.savefig(os.path.join(self.params["dir_model"], f"{self.params['experiment']} img {step_val:02d} xyz {x, y, z} box.png"), dpi=1200)
+            #plt.close()
