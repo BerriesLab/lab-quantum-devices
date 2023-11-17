@@ -1,6 +1,6 @@
 from imaging.segmentation.tools.classes_cnn import *
 
-os.chdir("D:\\mealworm\\ct")
+os.chdir("C:\\Users\\dabe\\Desktop\\ct")
 wrm = NNMealworms()
 wrm.params["dataset_trn_ratio"] = 0.7
 wrm.params["dataset_val_ratio"] = 0.15

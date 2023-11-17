@@ -24,33 +24,27 @@ class NNMealworms:
     def __init__(self):
         # The class assumes data are stored in main folder -> [data, dataset, model,...]
         self.params = {"dir_main": os.getcwd(),
-                       "experiment": datetime.datetime.now().strftime('%Y.%m.%d %H.%M.%S'), # datetime of the experiment
-                       "data_percentage": 1, # percentage of data to use
-                       "dataset_trn_ratio": 0.7, # percentage of data used for training
-                       "dataset_val_ratio": 0.2, # percentage of data used for validating
-                       "dataset_tst_ratio": 0.1, # percentage of data used for testing
-                       'batch_trn_size': 1, # number of data per batch
-                       'batch_val_size': 1, # number of data per batch
-                       'batch_tst_size': 1, # number of data per batch
-                       'dataset_trn': {}, # list of dictionary for training the model (compiled by script)
-                       'dataset_val': {}, # list of dictionary for validating the model (compiled by script)
-                       'dataset_tst': {}, # list of dictionary for testing the model (compiled by script)
+                       "experiment": datetime.datetime.now().strftime('%Y.%m.%d %H.%M.%S'),  # datetime of the experiment
+                       "data_percentage": 1,  # percentage of data to use
+                       "dataset_trn_ratio": 0.7,  # percentage of data used for training
+                       "dataset_val_ratio": 0.2,  # percentage of data used for validating
+                       "dataset_tst_ratio": 0.1,  # percentage of data used for testing
+                       'batch_trn_size': 1,  # number of data per batch
+                       'batch_val_size': 1,  # number of data per batch
+                       'batch_tst_size': 1,  # number of data per batch
+                       'dataset_trn': {},  # list of dictionary for training the model (compiled by script)
+                       'dataset_val': {},  # list of dictionary for validating the model (compiled by script)
+                       'dataset_tst': {},  # list of dictionary for testing the model (compiled by script)
                        'dx': 0.3,
                        'dy': 0.3,
                        'dz': 0.4,
                        # MODEL
-                       'n_classes': 2, # for this study, the feature is either a mealworm or background, i.e. 2 classes
-                       'kernel_size': 3, # size of the convolutional kernel (in pixels)
-                       "up_kernel_size": 3, # size of the upsaling kernel
-                       "activation_function": torch.nn.ReLU(),
-                       "dropout_ratio": 0,
-                       'learning_rate': 1e-3, # learning rate of the Adam optimizer
-                       'weight_decay': 1e-4, # weight decay of the Adam optimizer
+                       "n_classes": 2,
                        # TRAINING - VALIDATION
-                       'max_iteration_trn': 500, # max iteration for training
-                       'delta_iteration_trn': 10, # number of iterations in-between validation
-                       'intensity_min': -1000, # min voxel intensity value of CT scan
-                       'intensity_max': +1000, # max voxel intensity value of Ct scan
+                       'max_iteration_trn': 100,  # max iteration for training
+                       'delta_iteration_trn': 10,  # number of iterations in-between validation
+                       'intensity_min': -1000,  # min voxel intensity value of CT scan
+                       'intensity_max': +1000,  # max voxel intensity value of Ct scan
                        }
         self.transforms_trn = None
         self.transforms_val = None
@@ -80,8 +74,8 @@ class NNMealworms:
         torch.save(self.model, path)
 
     # load whole model
-    def load_model(self, model):
-        self.model = torch.load(os.path.join("model", model), map_location=self.device)
+    def load_model(self, model, ):
+        self.model = torch.load(os.path.join(os.getcwd(), "model", model), map_location=self.device)
 
     # save parameters (including dataset dictionaries)
     def save_params(self):
@@ -90,8 +84,15 @@ class NNMealworms:
 
     # save parameters
     def load_params(self, params):
-        with open(params, 'rb') as file:
+        with open(os.path.join(os.getcwd(), "model", params), 'rb') as file:
             self.params = pickle.load(file)
+
+    # set max iteration number and update vectors for loss and metric plot
+    def set_max_iteration(self, n):
+        self.params["max_iteration_trn"] = n
+        self.epochs = np.arange(self.params["max_iteration_trn"])
+        self.losses = np.zeros(self.params["max_iteration_trn"])
+        self.metrics = np.zeros(self.params["max_iteration_trn"])
 
     # define the transformation for the training dataset
     def compose_transforms_trn(self):
@@ -129,9 +130,8 @@ class NNMealworms:
     # build datasets. This function will not cache the data, just build a list of dictionaries for trn, val, and tst
     def build_dataset(self):
         # Each sample is a dictionary with (image path, labels path), and no actual data
-        # define training and validation dataset
-        path_images = sorted(glob.glob(os.path.join(self.params["dir_main"], "dataset", "img*.nii.gz")))
-        path_labels = sorted(glob.glob(os.path.join(self.params["dir_main"], "dataset", "sgm*.nii.gz")))
+        path_images = sorted(glob.glob(os.path.join("dataset", "img*.nii.gz")))
+        path_labels = sorted(glob.glob(os.path.join("dataset", "sgm*.nii.gz")))
         path_dicts = [{"img": image_name, "lbl": label_name} for image_name, label_name in zip(path_images, path_labels)]
         # select subset of data
         if self.params["data_percentage"] < 1:
@@ -160,22 +160,28 @@ class NNMealworms:
             self.loader_tst = DataLoader(dataset_tst, batch_size=self.params["batch_tst_size"])
 
     # build a UNet model
-    def build_model_unet(self):
+    def build_model_unet(self,
+                         kernel_size=3,
+                         up_kernel_size=3,
+                         activation_function=torch.nn.ReLU(),
+                         dropout_ratio=0,
+                         learning_rate=1e-3,  # learning rate of the Adam optimizer
+                         weight_decay=1e-4):  # weight decay of the Adam optimizer
         model = UNet(
             spatial_dims=3,
             in_channels=1,
             out_channels=self.params["n_classes"],
-            channels=(64, 128, 256, 512, 1024), #sequence of channels. Top block first. The length of channels should be no less than 2
-            strides=(2, 2, 2, 2), # sequence of convolution strides. The length of stride should equal to len(channels) - 1.
-            kernel_size=self.params["kernel_size"], #convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
-            up_kernel_size=self.params["up_kernel_size"], #upsampling convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
-            num_res_units=1,#– number of residual units. Defaults to 0.
-            #act=params["activation_function"],
-            dropout=self.params["dropout_ratio"]
+            channels=(64, 128, 256, 512, 1024),  # sequence of channels. Top block first. len(channels) >= 2
+            strides=(2, 2, 2, 2),  # sequence of convolution strides. len(strides) = len(channels) - 1.
+            kernel_size=kernel_size,  # convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
+            up_kernel_size=up_kernel_size,  # upsampling convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
+            num_res_units=1, # number of residual units. Defaults to 0.
+            #  act=params["activation_function"],
+            dropout=dropout_ratio
         ).to(self.device)
         self.model = model
         self.loss_function = DiceLoss(softmax=True)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=self.params['learning_rate'], weight_decay=self.params['weight_decay'])
+        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         self.dice_metric = DiceMetric(include_background=False, reduction="mean")
 
     # check gpu availability and print to screen
