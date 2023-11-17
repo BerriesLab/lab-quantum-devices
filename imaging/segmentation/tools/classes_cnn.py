@@ -7,6 +7,7 @@ import nibabel as nib
 import tqdm
 import datetime
 import pickle
+import csv
 from monai.networks.nets import UNet
 from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, AsDiscreted, AsDiscrete
 from monai.data import CacheDataset, DataLoader, decollate_batch
@@ -39,6 +40,7 @@ class NNMealworms:
                        'dy': 0.3,
                        'dz': 0.4,
                        # MODEL
+                       "model": None,
                        "n_classes": 2,
                        # TRAINING - VALIDATION
                        'max_iteration_trn': 100,  # max iteration for training
@@ -79,8 +81,16 @@ class NNMealworms:
 
     # save parameters (including dataset dictionaries)
     def save_params(self):
-        with open(os.path.join(self.params["dir_main"], "model", f'{self.params["experiment"]} params.dat'), 'wb') as file:
+        with open(os.path.join("model", f'{self.params["experiment"]} params.dat'), 'wb') as file:
             pickle.dump(self.params, file)
+        # Write the dictionary to a CSV file
+        with open(os.path.join("model", f'{self.params["experiment"]} params.csv'), 'w', newline='') as file:
+            writer = csv.writer(file)
+            # Write the header (optional)
+            writer.writerow(['Key', 'Value'])
+            # Write the dictionary data
+            for key, value in self.params.items():
+                writer.writerow([key, value])
 
     # save parameters
     def load_params(self, params):
@@ -163,6 +173,8 @@ class NNMealworms:
     def build_model_unet(self,
                          kernel_size=3,
                          up_kernel_size=3,
+                         channels=(64, 128, 256, 512, 1024),
+                         strides=(2, 2, 2, 2),
                          activation_function=torch.nn.ReLU(),
                          dropout_ratio=0,
                          learning_rate=1e-3,  # learning rate of the Adam optimizer
@@ -171,8 +183,8 @@ class NNMealworms:
             spatial_dims=3,
             in_channels=1,
             out_channels=self.params["n_classes"],
-            channels=(64, 128, 256, 512, 1024),  # sequence of channels. Top block first. len(channels) >= 2
-            strides=(2, 2, 2, 2),  # sequence of convolution strides. len(strides) = len(channels) - 1.
+            channels=channels,  # sequence of channels. Top block first. len(channels) >= 2
+            strides=strides,  # sequence of convolution strides. len(strides) = len(channels) - 1.
             kernel_size=kernel_size,  # convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
             up_kernel_size=up_kernel_size,  # upsampling convolution kernel size, the value(s) should be odd. If sequence, its length should equal to dimensions. Defaults to 3
             num_res_units=1, # number of residual units. Defaults to 0.
@@ -183,6 +195,9 @@ class NNMealworms:
         self.loss_function = DiceLoss(softmax=True)
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         self.dice_metric = DiceMetric(include_background=False, reduction="mean")
+        self.params["model"] = {"model": "unet",
+                                "channels": channels,
+                                "strides": strides}
 
     # check gpu availability and print to screen
     def check_gpu(self):
@@ -255,7 +270,7 @@ class NNMealworms:
         plt.tight_layout()
         if show:
             plt.show()
-        plt.savefig(f"{self.params['dir_model']}\\{self.params['experiment']} loss vs epoch.png")
+        plt.savefig(os.path.join("model", f"{self.params['experiment']} loss vs epoch.png"))
 
     # plot validation metric vs epoch
     def plot_metr(self, show=False):
@@ -268,18 +283,19 @@ class NNMealworms:
         plt.tight_layout()
         if show:
             plt.show()
-        plt.savefig(f"{self.params['dir_model']}\\{self.params['experiment']} metric vs epoch.png")
+        plt.savefig(os.path.join("model", f"{self.params['experiment']} metric vs epoch.png"))
 
     # plot segmentation
     def testing(self):
-        epoch_tst_iterator = tqdm.tqdm(self.loader_tst, desc="Training (X / X Steps) (loss=X.X)", dynamic_ncols=True, miniters=1)
+        epoch_tst_iterator = tqdm.tqdm(self.loader_tst, desc="Validating (X / X Steps)", dynamic_ncols=True, miniters=1)
         for step_tst, batch_tst in enumerate(epoch_tst_iterator):
+            epoch_tst_iterator.set_description(f"Training ({step_tst+1} / {len(epoch_tst_iterator)} Steps)")
             img_tst, lbl_tst = batch_tst["img"].to(self.device), batch_tst["lbl"].to(self.device)
-            prd_tst = self.model(img_tst)
+            lbl_prd = self.model(img_tst)
             # convert tensors from one hot encoding to single channel
             img_tst = img_tst[0, 0, :, :, :].cpu().numpy()
             lbl_tst = torch.argmax(lbl_tst, dim=1)[0, :, :, :].cpu().numpy()
-            lbl_prd = torch.argmax(prd_tst, dim=1)[0, :, :, :].cpu().numpy()
+            lbl_prd = torch.argmax(lbl_prd, dim=1)[0, :, :, :].cpu().numpy()
             print(f"Plotting sample {step_tst}...")
             # Find the (x,y,z) coordinates of the sample center
             x = int(np.floor(img_tst.shape[0] / 2))
@@ -322,6 +338,12 @@ class NNMealworms:
             axs[0, 2].set_title(f"XY plane at Z = {z} px")
             axs[0, 2].imshow(img_label_overlay_z_tst)
             axs[1, 2].imshow(img_label_overlay_z_prd)
+            # Remove x-axis and y-axis ticks, labels, and tick marks for all subplots
+            for ax in axs.flat:
+                ax.set_xticks([])
+                ax.set_yticks([])
+                ax.set_xticklabels([])
+                ax.set_yticklabels([])
             # Adjust layout for better spacing
             plt.tight_layout()
             # Save the figure to a file
@@ -357,12 +379,6 @@ class NNMealworms:
                 minr, minc, maxr, maxc = region.bbox
                 rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
                 axs[1, 2].add_patch(rect)
-            # Remove x-axis and y-axis ticks, labels, and tick marks for all subplots
-            for ax in axs.flat:
-                ax.set_xticks([])
-                ax.set_yticks([])
-                ax.set_xticklabels([])
-                ax.set_yticklabels([])
             # Save the figure to a file
             plt.savefig(os.path.join("model", f"{self.params['experiment']} img {step_tst:02d} xyz {x, y, z} box.png"), dpi=1200)
             plt.close()
