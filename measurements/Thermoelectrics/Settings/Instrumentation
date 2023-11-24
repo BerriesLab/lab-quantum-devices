@@ -1,0 +1,21 @@
+Temperature Controllers:
+tc1: Lakeshore 336
+tc2: Oxford Mercury ITC
+
+Current Sources
+aiv1: Stanford CS580
+aiv2: Stanford CS580
+aiv3: Stanford CS580
+aiv4: TUDelft ivvi IVa      Voltage controlled current source, upper half module
+aiv5: TUDelft ivvi IVa      Voltage controlled current source, upper half module
+
+Voltage Amplifiers
+avv1: Stanford SR560        Differential/Single ended
+avv2: Stanford SR560        Differential/Single ended
+avv3: TUDelft ivvi IVa      Differential, lower half module
+avv4: TUDelft ivvi IVa      Differential, lower half module
+avv5: Femto DDPCA 300       Single ended
+avv6: Femto DDPCA 300       Single ended
+
+Transimpedance amplifiers:
+avi1: Femto ..

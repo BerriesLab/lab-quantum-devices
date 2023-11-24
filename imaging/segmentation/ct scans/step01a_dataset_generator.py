@@ -2,16 +2,16 @@ from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Orientati
 from monai.data import CacheDataset, DataLoader
 
 # Define the paths to your 3D NIfTI CT scan and label files
-path_data = "C:\\Users\\dabe\\Desktop\\ct\\data\\img.nii.gz"
-path_label = "C:\\Users\\dabe\\Desktop\\ct\\data\\sgm.nii.gz"
+path_data = "D:\\mealworm\\ct\\data\\img.nii.gz"
+path_label = "D:\\mealworm\\ct\\data\\sgm.nii.gz"
 path_dict = [{"image": path_data, "label": path_label}]
-params = {"n_crops": 50,
+params = {"n_crops": 100,
           "n_classes": 2, # for a binary classification (feature vs backgorund) you need two classes
           "class_ratio": [1, 10], # it assumes that 0 (the background) is the first class
           }
 
 # Define the directory to save the training set
-path_out = "C:\\Users\\dabe\\Desktop\\ct\\dataset_trn"
+path_out = "D:\\mealworm\\ct\\dataset"
 
 # Define transforms for loading and preprocessing the NIfTI files
 transforms = Compose([
@@ -24,7 +24,7 @@ transforms = Compose([
     RandCropByLabelClassesd(
         keys=["image", "label"],
         label_key="label",
-        spatial_size=(256, 256, 256),
+        spatial_size=(64, 64, 64),
         ratios=params["class_ratio"],
         num_classes=params["n_classes"],
         num_samples=params["n_crops"],

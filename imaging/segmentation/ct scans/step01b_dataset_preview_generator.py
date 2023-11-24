@@ -10,20 +10,18 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 # Define the paths to your 3D NIfTI CT scan and label files
-path_dataset_trn = "C:\\Users\\dabe\\Desktop\\ct\\dataset_trn"
-path_images = sorted(glob.glob(os.path.join(path_dataset_trn, "img*.nii.gz")))
-path_labels = sorted(glob.glob(os.path.join(path_dataset_trn, "sgm*.nii.gz")))
+path_dataset = "D:\\mealworm\\ct\\dataset"
+path_images = sorted(glob.glob(os.path.join(path_dataset, "img*.nii.gz")))
+path_labels = sorted(glob.glob(os.path.join(path_dataset, "sgm*.nii.gz")))
 path_dicts = [{"image": image_name, "label": label_name} for image_name, label_name in zip(path_images, path_labels)]
 
 # Define transforms and DataLoader
 transforms = Compose([
     #CropLabelledVolumed(keys=["image", "label"]),
     LoadImaged(keys=["image", "label"]),
-    EnsureChannelFirstd(keys=["image", "label"]),
-]
-)
+    EnsureChannelFirstd(keys=["image", "label"]),])
 dataset_trn = CacheDataset(data=path_dicts, transform=transforms)
-loader_trn = DataLoader(dataset_trn, batch_size=1) # load one sample per time
+loader_trn = DataLoader(dataset_trn, batch_size=1)  # load one sample per time
 
 # Load and process data
 for step_trn, batch_trn in enumerate(loader_trn):
@@ -35,8 +33,11 @@ for step_trn, batch_trn in enumerate(loader_trn):
     # Convert PyTorch GPU tensors to CPU arrays
     img_array = batch_trn["image"].cpu().numpy()[0, 0, :, :, :]
     lbl_array = batch_trn["label"].cpu().numpy()[0, 0, :, :, :]
-    # Perform connected component analysis U
+    # Perform connected component analysis on 3d volume
     lbl_array = label(lbl_array, connectivity=1)
+    regions = regionprops(lbl_array)
+    n_rgn = len(regions)
+    print(f"N. regions ground truth: {n_rgn}\n")
     # Generate overlay images
     lbl_array_x = lbl_array[x, :, :]
     lbl_array_y = lbl_array[:, y, :]
@@ -83,5 +84,5 @@ for step_trn, batch_trn in enumerate(loader_trn):
     # Adjust layout for better spacing
     plt.tight_layout()
     # Save the figure to a file
-    plt.savefig(os.path.join(path_dataset_trn, f"plt_{step_trn}_xyz_{x,y,z}.png"), dpi=1200)
+    plt.savefig(os.path.join(path_dataset, f"plt_{step_trn}_xyz_{x,y,z}.png"), dpi=1200)
     plt.close()
