@@ -1,4 +1,4 @@
-from imaging.segmentation.tools.classes_cnn import *
+from imaging.tools.classes_cnn import *
 
 # let's try with res_units = 0
 # then pick the best and add one more layer: 2048 channels

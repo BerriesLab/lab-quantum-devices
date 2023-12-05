@@ -1,4 +1,4 @@
-from imaging.segmentation.tools.classes_cnn import *
+from imaging.tools.classes_cnn import *
 
 wrm = NNMealworms()
 os.chdir("/Users/berri/Desktop/ct")
