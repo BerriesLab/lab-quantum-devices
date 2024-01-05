@@ -7,9 +7,10 @@ import nibabel as nib
 import tqdm
 import datetime
 import pickle
+import pydicom
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, \
-    AsDiscreted, AsDiscrete
+    AsDiscreted, AsDiscrete, SpacingD
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 from monai.losses import DiceLoss
@@ -27,6 +28,7 @@ class DeepLearningExperiment:
     and testing. It includes libraries for plotting (under development), and statistical analysis (in dev.). """
     def __init__(self):
         # The class assumes by default data are stored in main folder -> [data, dataset, model,...]
+        # however these subdirectory can be changed by changing the corresponding attribute
         # Note: main -> dataset includes training, validation and testing datasets
         self.path_main = None
         self.path_dataset = "dataset"
@@ -40,17 +42,17 @@ class DeepLearningExperiment:
         self.model_info = None
         self.n_classes = 2
         self.optimizer = None
-        # TRAINING - VALIDATION
         self.max_iteration_trn = 100,  # max iteration for training
         self.delta_iteration_trn = 10,  # number of iterations in-between each validation step
+        # TRANSFORMATIONS
         self.intensity_min = 1.0,  # min voxel intensity value, used for intensity rescaling
         self.intensity_max = 1.0,  # max voxel intensity value, used for intensity rescaling
-        # TRANSFORMATIONS
         self.transforms_trn = None
         self.transforms_val = None
         self.transforms_tst = None
-        # DATA AND LOADERS
+        # IMAGE METADATA
         self.voxel = (1.0, 1.0, 1.0)  # voxel dimensions (dx, dy, dz) in mm
+        # DATA AND LOADERS
         self.data_percentage = 1
         self.dataset_trn_ratio = 0.7,  # percentage of data used for training
         self.dataset_val_ratio = 0.2,  # percentage of data used for validating
@@ -61,9 +63,9 @@ class DeepLearningExperiment:
         self.dataset_trn = {},  # list of dictionary for training the model (compiled by method)
         self.dataset_val = {},  # list of dictionary for validating the model (compiled by method)
         self.dataset_tst = {},  # list of dictionary for testing the model (compiled by method)
-        self.loader_trn = None
-        self.loader_val = None
-        self.loader_tst = None
+        self.loader_trn = None  # training data loader (compiled by method)
+        self.loader_val = None  # validation data loader (compiled by method)
+        self.loader_tst = None  # testing data loader (compiled by method)
         # MODEL PERFORMANCE INDEXES
         self.loss_function = None
         self.dice_metric = None
@@ -114,14 +116,26 @@ class DeepLearningExperiment:
     # define the transformation for the training dataset
     def compose_transforms_trn(self):
         self.transforms_trn = Compose([
-            LoadImaged(keys=["img", "lbl"]),
-            EnsureChannelFirstd(keys=["img", "lbl"]),
-            AsDiscreted(keys=["lbl"], to_onehot=self.n_classes),
-            Spacingd(keys=["img", "lbl"], pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
-                     mode=("bilinear", "nearest")),
-            OrientationD(keys=["img", "lbl"], axcodes="RAS"),
-            ScaleIntensityRanged(keys=["img"], a_min=self.intensity_min, a_max=self.intensity_max,
-                                 b_min=0.0, b_max=1.0, clip=True),
+            LoadImaged(
+                keys=["img", "lbl"]),
+            EnsureChannelFirstd(
+                keys=["img", "lbl"]),
+            # AsDiscreted(
+            #     keys=["lbl"], to_onehot=self.n_classes),
+            Spacingd(
+                keys=["img", "lbl"],
+                pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
+                mode=("bilinear", "nearest")),
+            OrientationD(
+                keys=["img", "lbl"],
+                axcodes="RAS"),
+            ScaleIntensityRanged(
+                keys=["img"],
+                a_min=self.intensity_min,
+                a_max=self.intensity_max,
+                b_min=0.0,
+                b_max=1.0,
+                clip=True),
         ])
 
     # define the transformation for the validation dataset
