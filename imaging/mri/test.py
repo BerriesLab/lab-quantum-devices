@@ -4,7 +4,8 @@ import torch
 # 1. DATA PRE-PROCESSING
 
 # STEP 1.1: skull stripping -> by HD BET in 3D slicer
-# Skull stripping is performed on T1, 1T1 and 1/2T1 MR images
+# Skull stripping is performed on T1, 1T1 and 1/2T1 MR images. To the purpose of model training,
+# save the pairs (skul
 
 # STEP 1.2: image registration -> by SimpleElastix (SimpleITK) in Python.
 # Image registration is performed on (T1, 1T1) and (T1, 1/2T1) pairs separately,

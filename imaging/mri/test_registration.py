@@ -1,14 +1,12 @@
 import SimpleITK as sitk
 
 fixImage = sitk.ReadImage("pre_contrast_image.nii")  # "fixed" or "pre-contrast" image
+fixMask = sitk.ReadImage("mask")
 movImage = sitk.ReadImage("pst_contrast_image.nii")  # "moving" or "post-contrast" image
-# regImage = sitk.Elastix(fixImage, movImage, "rigid")  # or registered image
-# parameterMap = sitk.GetDefaultParameterMap("rigid")  # define the parameters for the registration
-
-# object-oriented programming of registration
-elastixImageFilter = sitk.ElastixImageFilter()
+elastixImageFilter = sitk.ElastixImageFilter()  # create a SimpleElastix object
 elastixImageFilter.SetFixedImage(fixImage)
 elastixImageFilter.SetMovingImage(movImage)
+elastixImageFilter.SetFixedMask(fixMask)  # here the mask is the brain
 elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
 # sitk.PrintParameterMap(sitk.GetDefaultParameterMap("rigid"))
 elastixImageFilter.Execute()
