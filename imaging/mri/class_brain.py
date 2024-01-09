@@ -13,8 +13,12 @@ from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd,
     AsDiscreted, AsDiscrete, SpacingD
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
+
 from monai.losses import DiceLoss
+from monai.losses import MultiScaleLoss
 from monai.metrics import DiceMetric
+from monai.losses.ssim_loss import SSIMLoss
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from skimage.color import label2rgb
@@ -75,9 +79,18 @@ class DeepLearningExperiment:
         # HARDWARE
         self.device = torch.device(self.cuda_mps_cpu())
         self.check_gpu()
-        # HIDDEN
+        # HIDDEN - "to implement one by one in the research phase"
         self.__loss_dict = {"L1": torch.nn.L1Loss(),
-                            "L2": torch.nn.MSELoss(), }
+                            "L2": torch.nn.MSELoss(),
+                            "SSIM": SSIMLoss(spatial_dims=3,),
+                            "MSSIM": MultiScaleLoss(loss=SSIMLoss(),
+                                                    scales=[1, 2, 4],
+                                                    kernel="gaussian",
+                                                    reduction=LossReduction.MEAN)}
+        self.__metric_dict = {"L1": torch.nn.L1Loss(),
+                              "L2": torch.nn.MSELoss(),
+                              "SSIM": 0,
+                              "MSSIM": 1}
 
     def get_loss_dict(self):
         return self.__loss_dict

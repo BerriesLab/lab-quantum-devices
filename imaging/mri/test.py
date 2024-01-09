@@ -47,10 +47,11 @@ unet.voxel = (1.0, 1.0, 1.0)
 # MR intensity after z-score normalization is between -1 and +1
 unet.intensity_min = -1
 unet.intensity_min = +1
-# define loss (training) and metric (validation and testing) functions
+# define loss function (for training)
 unet.loss_function = torch.nn.L1Loss()  # Mean absolute value error, or L1
 unet.loss_function = torch.nn.MSELoss()  # Mean squared error, or L2
 unet.loss_function = SSIMLoss(spatial_dims=3, data_range=1.0, kernel_type=KernelType.GAUSSIAN, win_size=11, kernel_sigma=1.5, k1=0.01, k2=0.03, reduction=LossReduction.MEAN)
+# define metric function (for validation and testing)
 unet.metric_function = SSIMMetric(spatial_dims=3, data_range=1.0, kernel_type=KernelType.GAUSSIAN, win_size=11, kernel_sigma=1.5, k1=0.01, k2=0.03, reduction=MetricReduction.MEAN, get_not_nans=False)
 unet.metric_function = PSNRMetric(max_val, reduction=MetricReduction.MEAN, get_not_nans=False)
 
