@@ -45,7 +45,7 @@ class DeepLearningExperiment:
         self.max_iteration_trn = 100  # max iteration for training
         self.delta_iteration_trn = 1  # number of iterations in-between each validation step
         # TRANSFORMATIONS
-        self.intensity_min = 1.0  # min voxel intensity value, used for intensity rescaling
+        self.intensity_min = -1.0  # min voxel intensity value, used for intensity rescaling
         self.intensity_max = 1.0  # max voxel intensity value, used for intensity rescaling
         self.transforms_trn = None
         self.transforms_val = None
@@ -68,10 +68,10 @@ class DeepLearningExperiment:
         self.loader_tst = None  # testing data loader (compiled by method)
         # MODEL PERFORMANCE INDEXES
         self.loss_function = None
-        self.dice_metric = None
+        self.metric_function = None
         self.epochs = None
         self.losses = None
-        self.metrics = None
+        self.scores = None
         # HARDWARE
         self.device = torch.device(self.cuda_mps_cpu())
         self.check_gpu()
@@ -129,6 +129,7 @@ class DeepLearningExperiment:
             OrientationD(
                 keys=["img", "lbl"],
                 axcodes="RAS"),
+            # rescale intensity in the range [0, 1]
             ScaleIntensityRanged(
                 keys=["img"],
                 a_min=self.intensity_min,
@@ -309,16 +310,16 @@ class DeepLearningExperiment:
             # validate model every "delta_iteration"
             if epoch == 0 or (epoch + 1) % self.delta_iteration_trn == 0 or (epoch + 1) == self.max_iteration_trn:
                 # run validation
-                metric = self.validate(epoch)
+                score = self.validate(epoch)
                 # store validation metrics in metrics array
-                self.metrics[epoch] = metric
+                self.scores[epoch] = score
                 # save model to disc
                 torch.save(self.model, os.path.join(self.path_model, f"{self.experiment} - iter {epoch + 1:03d} mdl.pth"))
 
     # validate model
     def validate(self, epoch):
         # set validation metric to zero
-        epoch_metric = 0
+        epoch_score = 0
         # set the model to validation. This affects some transforms.
         self.model.eval()
         # disable gradient computation (which is useless for validation)
@@ -336,13 +337,13 @@ class DeepLearningExperiment:
                 prd_val = AsDiscrete(threshold=0.5)(prd_val)
                 self.dice_metric(y_pred=prd_val, y=lbl_val)
                 # evaluate metric. Need to aggregate first and then collect the item.
-                batch_metric = self.dice_metric.aggregate().item()
+                batch_score = self.dice_metric.aggregate().item()
                 # add batch's validation metric and then calculate average metric
-                epoch_metric += batch_metric
-                metric_mean = epoch_metric / (step_val + 1)
+                epoch_score += batch_score
+                score_mean = epoch_score / (step_val + 1)
                 # Update the progress bar description with metric
-                epoch_val_iterator.set_description(f"Validate ({epoch + 1} / {self.max_iteration_trn} Steps) (dice={metric_mean:2.5f})")
-        return metric_mean
+                epoch_val_iterator.set_description(f"Validate ({epoch + 1} / {self.max_iteration_trn} Steps) (dice={score_mean:2.5f})")
+        return score_mean
 
     # plot training loss vs epoch
     def plot_loss(self, show=False):
