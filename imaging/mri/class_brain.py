@@ -75,6 +75,12 @@ class DeepLearningExperiment:
         # HARDWARE
         self.device = torch.device(self.cuda_mps_cpu())
         self.check_gpu()
+        # HIDDEN
+        self.__loss_dict = {"L1": torch.nn.L1Loss(),
+                            "L2": torch.nn.MSELoss(), }
+
+    def get_loss_dict(self):
+        return self.__loss_dict
 
     @staticmethod
     def cuda_mps_cpu():
@@ -112,6 +118,12 @@ class DeepLearningExperiment:
             loaded_data = pickle.load(file)
         for key, val in loaded_data.items():
             setattr(self, key, val)
+
+    def set_loss_function(self, loss_function):
+        self.loss_function = self.get_loss_dict()[loss_function]
+
+    def get_loss_function(self):
+        return
 
     # define the transformation for the training dataset
     def compose_transforms_trn(self):
