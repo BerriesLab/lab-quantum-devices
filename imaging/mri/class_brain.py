@@ -1,4 +1,5 @@
 import os
+import csv
 import glob
 import random
 import numpy as np
@@ -43,7 +44,6 @@ class DeepLearningExperiment:
         # at the beginning of the training phase.
         # MODEL
         self.model = None
-        self.model_info = None
         self.n_classes = 2
         self.optimizer = None
         self.max_iteration_trn = 100  # max iteration for training
@@ -77,69 +77,98 @@ class DeepLearningExperiment:
         self.losses = None
         self.scores = None
         # HARDWARE
-        self.device = torch.device(self.cuda_mps_cpu())
-        self.check_gpu()
-        # HIDDEN - "to implement one by one in the research phase"
-        self.__loss_dict = {"L1": torch.nn.L1Loss(),
-                            "L2": torch.nn.MSELoss(),
-                            "SSIM": SSIMLoss(spatial_dims=3,),
-                            "MSSIM": MultiScaleLoss(loss=SSIMLoss(),
-                                                    scales=[1, 2, 4],
-                                                    kernel="gaussian",
-                                                    reduction=LossReduction.MEAN)}
-        self.__metric_dict = {"L1": torch.nn.L1Loss(),
-                              "L2": torch.nn.MSELoss(),
-                              "SSIM": 0,
-                              "MSSIM": 1}
+        self.device = torch.device(self.set_gpu())
 
-    def get_loss_dict(self):
-        return self.__loss_dict
+    def generate_experiment_name(self):
+        """the experiment name is the datetime. Model info are saved in a text file"""
+        self.experiment = datetime.datetime.now().strftime('%Y.%m.%d %H.%M.%S')
 
-    @staticmethod
-    def cuda_mps_cpu():
-        if torch.cuda.is_available():
-            return "cuda"
-        elif torch.backends.mps.is_available() and torch.backends.mps.is_built() and False:
-            return "mps"
+    def set_optimizer(self, optimizer="adam"):
+        """Set the model optimizer."""
+        if self.model is None:
+            return print("Please build a model before setting the optimizer...")
         else:
-            return "cpu"
+            if optimizer == "adam":
+                self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=1E-3, weight_decay=1E-4)
+            if optimizer == "sgd":
+                self.optimizer = torch.optim.SGD(self.model.parameters(), lr=1E-2, weight_decay=0)
 
-    # extract dx, dy, and dz from a representative sample
+    def set_loss_function(self, loss_function="l1"):
+        """Set the loss function for training"""
+        if loss_function == "l1":
+            self.loss_function = torch.nn.L1Loss()
+        if loss_function == "l2":
+            self.loss_function = torch.nn.MSELoss()
+        if loss_function == "ssim":
+            self.loss_function = SSIMLoss(spatial_dims=3, )
+        if loss_function == "mssim":
+            self.loss_function = MultiScaleLoss(loss=SSIMLoss(),
+                                                scales=[1, 2, 4],
+                                                kernel="gaussian",
+                                                reduction=None)
+
+    def set_metric_function(self, metric_function="l1"):
+        """Set the metric function for validation and testing"""
+        if metric_function == "l1":
+            self.metric_function = torch.nn.L1Loss()
+        if metric_function == "l2":
+            self.metric_function = torch.nn.MSELoss()
+        if metric_function == "ssim":
+            self.metric_function = None
+        if metric_function == "mssim":
+            self.metric_function = None
+
+    def set_gpu(self):
+        """check gpu availability, set device and print to screen"""
+        if torch.cuda.is_available():
+            var = "cuda"
+        elif torch.backends.mps.is_available() and torch.backends.mps.is_built() and False:
+            var = "mps"
+        else:
+            var = "cpu"
+        self.device = var
+        print(f"Model running on {self.device}")
+
     def get_voxel_size(self):
+        """extract voxel dimensions from first image in training dataset"""
         if not self.dataset_trn:
             print("Error: dataset_trn is empty. Build datasets first.")
             return
         self.voxel[0], self.voxel[1], self.voxel[2] = nib.load(self.dataset_trn[0]["img"]).header.get_zooms()
 
-    # save model
     def save_model(self):
         torch.save(self.model, os.path.join(self.path_model, self.experiment))
 
-    # load model
     def load_model(self, model):
         self.model = torch.load(os.path.join(self.path_main, self.path_model, model), map_location=self.device)
 
-    # save all attributes but model
-    def save_attributes(self, filename, *attributes):
-        data_to_save = {f"{attr}": getattr(self, attr) for attr in attributes}
-        with open(filename, 'wb') as file:
-            pickle.dump(data_to_save, file)
+    def save_model_attributes_to_csv(self, filename):
+        """save model attributes to CSV"""
+        data_to_save = {f"{key}": val for (key, val) in vars(self.model)}
+        with open(filename, "w", newline="") as file:
+            writer = csv.writer(file)
+            # Write the header
+            writer.writerow(["Attribute", "Value"])
+            # Write the attribute-value pairs
+            for attr, value in data_to_save.items():
+                writer.writerow([attr, value])
 
-    # load all attributes but model
-    def load_attributes(self, filename):
-        with open(filename, 'rb') as file:
-            loaded_data = pickle.load(file)
-        for key, val in loaded_data.items():
-            setattr(self, key, val)
+    def load_model_attributes_from_csv(self, filename):
+        """load model attributes from CSV"""
+        data = {}
+        with open(filename, "r") as file:
+            reader = csv.reader(file)
+            # Skip the header
+            next(reader, None)
+            # Read attribute-value pairs
+            for row in reader:
+                attr, value = row
+                data[attr] = eval(value)  # Use eval to convert the string back to its original type
+        for key, val in data.items():
+            self.model.setattr(self, key, val)
 
-    def set_loss_function(self, loss_function):
-        self.loss_function = self.get_loss_dict()[loss_function]
-
-    def get_loss_function(self):
-        return
-
-    # define the transformation for the training dataset
     def compose_transforms_trn(self):
+        """compose the transformation for the training dataset"""
         self.transforms_trn = Compose([
             LoadImaged(
                 keys=["img", "lbl"]),
@@ -164,8 +193,8 @@ class DeepLearningExperiment:
                 clip=True),
         ])
 
-    # define the transformation for the validation dataset
     def compose_transforms_val(self):
+        """compose the transformation for the validation dataset"""
         self.transforms_val = Compose([
             LoadImaged(keys=["img", "lbl"]),
             EnsureChannelFirstd(keys=["img", "lbl"]),
@@ -177,8 +206,8 @@ class DeepLearningExperiment:
                                  b_min=0.0, b_max=1.0, clip=True),
         ])
 
-    # define the transformation for the testing dataset
     def compose_transforms_tst(self):
+        """compose the transformation for the testing dataset"""
         self.transforms_tst = Compose([
             LoadImaged(keys=["img", "lbl"]),
             EnsureChannelFirstd(keys=["img", "lbl"]),
@@ -190,8 +219,8 @@ class DeepLearningExperiment:
                                  b_min=0.0, b_max=1.0, clip=True),
         ])
 
-    # build datasets. This function will not cache the data, just build a list of dictionaries for trn, val, and tst
     def build_dataset(self):
+        """Builds a list of dictionaries for trn, val, and tst datasets"""
         # Each sample is a dictionary with (image path, labels path), and no actual data
         path_images = sorted(glob.glob(os.path.join("dataset", "img*.nii.gz")))
         path_labels = sorted(glob.glob(os.path.join("dataset", "sgm*.nii.gz")))
@@ -210,104 +239,48 @@ class DeepLearningExperiment:
         self.dataset_val = path_dicts[n_tra:n_tra + n_val]
         self.dataset_tst = path_dicts[n_tra + n_val:]
 
-    # cache training dataset and generate loader
     def cache_dataset_trn(self):
+        """cache training dataset and generate loader"""
         if self.dataset_trn:
             dataset_trn = CacheDataset(data=self.dataset_trn, transform=self.transforms_trn)
             self.loader_trn = DataLoader(dataset_trn, batch_size=self.batch_trn_size)
 
-    # cache validation dataset and generate loader
     def cache_dataset_val(self):
+        """cache validation dataset and generate loader"""
         if self.dataset_val:
             dataset_val = CacheDataset(data=self.dataset_val, transform=self.transforms_val)
             self.loader_val = DataLoader(dataset_val, batch_size=self.batch_val_size)
 
-    # cache testing dataset and generate loader
     def cache_dataset_tst(self):
+        """cache testing dataset and generate loader"""
         if self.dataset_tst:
             dataset_tst = CacheDataset(data=self.dataset_tst, transform=self.transforms_tst)
             self.loader_tst = DataLoader(dataset_tst, batch_size=self.batch_tst_size)
 
-    # build a UNet model
-    def build_model_unet(self,
-                         kernel_size=3,
-                         up_kernel_size=3,
-                         channels=(64, 128, 256, 512, 1024),
-                         strides=(2, 2, 2, 2),
-                         activation_function=torch.nn.ReLU(),
-                         dropout_ratio=0,
-                         learning_rate=1e-3,  # learning rate of the Adam optimizer
-                         weight_decay=1e-4,
-                         num_res_units=1):  # weight decay of the Adam optimizer
+    def build_model_unet(self):  # weight decay of the Adam optimizer
+        """Build a UNet model"""
         model = UNet(
             spatial_dims=3,
             in_channels=1,
             out_channels=self.n_classes,
-            channels=channels,  # sequence of channels. Top block first. len(channels) >= 2
-            strides=strides,  # sequence of convolution strides. len(strides) = len(channels) - 1.
-            kernel_size=kernel_size,
-            # convolution kernel size, the value(s) should be odd. If sequence, its length should equal
-            # to dimensions. Defaults to 3
-            up_kernel_size=up_kernel_size,
-            # Upsampling convolution kernel size, the value(s) should be odd. If sequence, its length
-            # should equal to dimensions. Defaults to 3
-            num_res_units=num_res_units,  # number of residual units. Defaults to 0.
-            #  act=params["activation_function"],
-            dropout=dropout_ratio
+            channels=(64, 128, 256, 512, 1024),  # sequence of channels. Top block first. len(channels) >= 2
+            strides=(2, 2, 2, 2),  # sequence of convolution strides. len(strides) = len(channels) - 1.
+            kernel_size=3, # convolution kernel size, value(s) should be odd. If sequence, length = N. layers.
+            up_kernel_size=3, # de-convolution kernel size, value(s) should be odd. If sequence, length = N. layers
+            num_res_units=1,  # number of residual units. Defaults to 0.
+            # act=params["activation_function"],
+            dropout=0
         ).to(self.device)
         self.model = model
-        self.loss_function = DiceLoss(softmax=True)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        self.dice_metric = DiceMetric(include_background=False, reduction="mean")
-        self.model_info = {"model": "unet",
-                           "channels": channels,
-                           "strides": strides,
-                           "num_res_units": num_res_units}
 
-    # build a UNETR model
-    def build_model_unetr(self,
-                          num_heads = 12,
-                          feature_size = 16,
-                          patch_size=(128, 128, 128),
-                          learning_rate=1e-3,
-                          weight_decay=1e-4):
-        model = UNETR(
-            in_channels=1,
-            out_channels=self.n_classes,
-            img_size=patch_size,  # dimension of input (patch) image.
-            feature_size=feature_size,  # dimension of network feature size. Defaults to 16.
-            hidden_size=768,  # dimension of hidden layer. Defaults to 768.
-            mlp_dim=3072,  # dimension of feedforward layer. Defaults to 3072.
-            num_heads=num_heads,  # number of attention heads. Defaults to 12.
-            pos_embed="perceptron",
-            norm_name="instance",
-            res_block=True,
-            dropout_rate=0.0,
-        ).to(self.device)
-        self.model = model
-        self.loss_function = DiceLoss(softmax=True)
-        self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-        self.dice_metric = DiceMetric(include_background=False, reduction="mean")
-        self.model_info = {"model": "unetr",
-                           "attention heads": num_heads,
-                           "feature size": feature_size}
-
-    # check gpu availability and print to screen
-    def check_gpu(self):
-        print(f"Model running on {self.device}")
-
-    def generate_experiment_name(self):
-        self.experiment = (f"{datetime.datetime.now().strftime('%Y.%m.%d %H.%M.%S')} "
-                           ', '.join(f'{key}={value}' for key, value in self.model_info.items()))
-
-    # train model
     def train(self):
+        """Train the model"""
         # generate the experiment name
         self.generate_experiment_name()
         # generate arrays for training and validating plotting purposes
         self.epochs = np.arange(self.max_iteration_trn)
         self.losses = np.zeros(self.max_iteration_trn)
-        self.metrics = np.zeros(self.max_iteration_trn)
+        self.scores = np.zeros(self.max_iteration_trn)
         for epoch in range(self.max_iteration_trn):
             # set the model to training. This has effect only on some transforms
             self.model.train()
@@ -341,8 +314,8 @@ class DeepLearningExperiment:
                 # save model to disc
                 torch.save(self.model, os.path.join(self.path_model, f"{self.experiment} - iter {epoch + 1:03d} mdl.pth"))
 
-    # validate model
     def validate(self, epoch):
+        """Validate the model"""
         # set validation metric to zero
         epoch_score = 0
         # set the model to validation. This affects some transforms.
@@ -353,22 +326,26 @@ class DeepLearningExperiment:
             for step_val, batch_val in enumerate(epoch_val_iterator):
                 # reset dice metrics for next validation round.
                 # ???? Do we do this in between batches ???
-                self.dice_metric.reset()
+                self.metric_function.reset()
                 # send the validation data to device (GPU)
                 img_val, lbl_val = batch_val["img"].to(self.device), batch_val["lbl"].to(self.device)
                 # run inference by forward passing the input data through the model
                 prd_val = self.model(img_val)
                 # binarize the prediction (as required by the dice metric)
                 prd_val = AsDiscrete(threshold=0.5)(prd_val)
-                self.dice_metric(y_pred=prd_val, y=lbl_val)
-                # evaluate metric. Need to aggregate first and then collect the item.
-                batch_score = self.dice_metric.aggregate().item()
+                self.metric_function(y_pred=prd_val, y=lbl_val)
+                # evaluate metric. ??? Need to aggregate first ??? and then collect the item.
+                batch_score = self.metric_function.aggregate().item()
                 # add batch's validation metric and then calculate average metric
                 epoch_score += batch_score
                 score_mean = epoch_score / (step_val + 1)
                 # Update the progress bar description with metric
                 epoch_val_iterator.set_description(f"Validate ({epoch + 1} / {self.max_iteration_trn} Steps) (dice={score_mean:2.5f})")
         return score_mean
+
+    def testing(self):
+        """test model on a testing dataset"""
+
 
     # plot training loss vs epoch
     def plot_loss(self, show=False):
