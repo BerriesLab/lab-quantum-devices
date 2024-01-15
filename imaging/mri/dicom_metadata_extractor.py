@@ -50,7 +50,6 @@ for group in groups:
                             "series directory": os.path.join(main, group, "IMediaExport", "DICOM", patient, study, serie, "OBJ_0001"),
 
                             "body part examined": metadata.BodyPartExamined if "BodyPartExamined" in metadata else None,
-                            "contrast bolus agent": metadata.ContrastBolusAgent if "ContrastBolusAgent" in metadata else None,
 
                             "pixel spacing row": float(metadata.PixelSpacing[0]) if "PixelSpacing" in metadata else None,
                             "pixel spacing column": float(metadata.PixelSpacing[1]) if "PixelSpacing" in metadata else None,
