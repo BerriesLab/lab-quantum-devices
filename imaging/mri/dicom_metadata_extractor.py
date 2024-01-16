@@ -54,10 +54,12 @@ for group in groups:
                             "pixel spacing row": float(metadata.PixelSpacing[0]) if "PixelSpacing" in metadata else None,
                             "pixel spacing column": float(metadata.PixelSpacing[1]) if "PixelSpacing" in metadata else None,
                             "slice spacing": float(metadata.SliceThickness) if "SliceThickness" in metadata else None,
-                            "image direction cosines": tuple([x for x in metadata.ImageOrientationPatient]) if "ImageOrientationPatient" in metadata else None,
-                            "image direction patient": cosines_to_patient([x for x in metadata.ImageOrientationPatient]) if "ImageOrientationPatient" in metadata else None,
+                            "direction cosines": tuple([x for x in metadata.ImageOrientationPatient]) if "ImageOrientationPatient" in metadata else None,
+                            "direction": cosines_to_patient([x for x in metadata.ImageOrientationPatient]) if "ImageOrientationPatient" in metadata else None,
                             "magnetic field strength": metadata.MagneticFieldStrength if "MagneticFieldStrength" in metadata else None,
                             "manufacturer model": (metadata.Manufacturer if "Manufacturer" in metadata else None, metadata.ManufacturerModelName if "ManufacturerModelName" in metadata else None),
+
+                            "dataset": None,
                             }
                     data = pd.Series(data)
                     df.append(data)
