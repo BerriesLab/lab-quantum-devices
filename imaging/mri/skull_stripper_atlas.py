@@ -1,20 +1,22 @@
 import pandas as pd
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import SimpleITK as sitk
-from utilities import convert_dicom_to_nifti
+from utilities import *
 
 # Skull stripping is performed on T1, 1T1 and 1/2T1 MR images. To the purpose of model training,
 # save the pairs (skull, brain segment): the brain segment will be used to weight the registration and model training.
 
 # load canine brain atlas
-atlas = sitk.ReadImage("/Users/berri/Medical Imaging/mri/brain atlas/canine.nii.gz")
+# atlas = sitk.ReadImage("/Users/berri/Medical Imaging/mri/brain atlas/canine.nii.gz")
+atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Johnson v2/Canine_population_template.nii.gz")
+#atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Nitzsche/canine_template.nii.gz")
 img = sitk.GetArrayFromImage(atlas)
-# get atlas spacing
-atlas_spacing = atlas.GetSpacing()
 
 # load database
-df = pd.read_csv("/Users/berri/Medical Imaging/mri/database.csv", sep=";", index_col=False)
+# df = pd.read_csv("/Users/berri/Medical Imaging/mri/database.csv", sep=";", index_col=False)
+df = pd.read_csv("E:/2021_local_data/2023_Gd_synthesis/DICOM/database.csv", sep=";", index_col=False)
 # filter df: drop all rows where "modality" != MR
 df = df[df["modality"].str.lower() == "mr"]
 # filter df: drop all rows where "series description" == NaN
@@ -48,14 +50,31 @@ for key, grp in grouped:
     print("\n")
 
     # get nifti image from pre-contrast series T1
-    path = grp[grp["contrast dose"] == 0]["series directory"]
-    mri = sitk.ReadImage(path)
+    path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
+    mri = read_dicom_series(path)
 
+    # register atlas to mr image
+    registered = register(fix_img=mri, mov_img=atlas, registration="rigid")
+    slice_to_plot = 50
 
-    #convert_dicom_to_nifti(grp["series directory"],
+    # Plot the slice using Matplotlib
+    plt.figure(figsize=(15, 5))
+    # Plot the first image
+    plt.subplot(1, 3, 1)
+    plt.imshow(sitk.GetArrayFromImage(mri)[slice_to_plot, :, :], cmap='gray')
+    plt.title('MR')
+    plt.axis('off')  # Turn off axis labels for better visualization
 
+    # Plot the second image
+    plt.subplot(1, 3, 2)
+    plt.imshow(sitk.GetArrayFromImage(atlas)[slice_to_plot, :, :], cmap='gray')
+    plt.title('Atlas')
+    plt.axis('off')
 
-
-# df = df.dropna(subset="series description")[(df["modality"].str.lower() == "mr") and
-#                                             (df["series description"].str.contains("tra t1", case=False)) and
-#                                             (df["patient species"].str.lower() == "dog")]
+    # Plot the third image
+    plt.subplot(1, 3, 3)
+    plt.imshow(sitk.GetArrayFromImage(mri)[slice_to_plot, :, :], cmap='gray')
+    plt.imshow(sitk.GetArrayFromImage(registered)[slice_to_plot, :, :], cmap='jet', alpha=0.5)
+    plt.title('??')
+    plt.axis('off')
+    plt.show()
