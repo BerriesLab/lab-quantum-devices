@@ -40,33 +40,29 @@ def convert_dicom_to_nifti(path_dicom_series, path_nifti):
     sitk.WriteImage(dicom_image, path_nifti)
 
 
-def resample_brain_to_mri(atlas, image):
+def resample_brain_to_mri(atlas, mri, registration="rigid"):
     """ This function takes an input image (atlas) and a target image (image).
     It calculates the resizing factor based on the original and target spacing,
     computes the new size, and then uses sitk.Resample to perform the actual resizing. """
-    # get spacing and size of brain atlas and mr image
-    atlas_spacing = atlas.GetSpacing()
-    atlas_size = atlas.GetSize()
-    image_spacing = image.GetSpacing()
-    image_size = image.GetSize()
-    # Calculate the resizing factor
-    resizing_factor = [x / y for x, y in zip(atlas_spacing, image_spacing)]
-    # Calculate the new size
-    new_size = [int(round(x * f)) for x, f in zip(atlas_size, resizing_factor)]
-    # Create a transform
-    transform = sitk.Transform()
-    transform.SetIdentity()
-    # Set the output image spacing
-    output_spacing = image_spacing
-    output_origin = image.GetOrigin()
-    output_direction = image.GetDirection()
 
-    # Perform resampling
-    resized_image = sitk.Resample(image, new_size, transform, sitk.sitkLinear,
-                                  output_origin, output_spacing, output_direction)
-    sitk.Resample(image=atlas)
+    fixedImage = sitk.ReadImage(mri)
+    movingImage = sitk.ReadImage(atlas)
+    parameterMap = sitk.GetDefaultParameterMap(registration)
 
-    return resized_image
+    # create an elastic object
+    elastixImageFilter = sitk.ElastixImageFilter()
+    # set fixed and moving images, and mapping parameters
+    elastixImageFilter.SetFixedImage(fixedImage)
+    elastixImageFilter.SetMovingImage(movingImage)
+    elastixImageFilter.SetParameterMap(parameterMap)
+    # execute registration
+    elastixImageFilter.Execute()
+    # get resulting image
+    resultImage = elastixImageFilter.GetResultImage()
+    # get transformation parameters
+    transformParameterMap = elastixImageFilter.GetTransformParameterMap()
+
+    return resultImage
 
 
 # Load the original image
