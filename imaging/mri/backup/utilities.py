@@ -49,14 +49,14 @@ def read_dicom_series(path_dicom_series):
     return image
 
 
-def register_brain(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid"):
-    """ This function registers a brain atlas (moving image) to an MR image (fixed image).
-    To facilitate the registration, the function consists in the following steps:
-    1. Resample the moving image to the fixed image by 3D affine transformation. This allows to match the spacings,
-    the origins and to align the direction cosines of the moving image to the fixed image.
-    2. Match the intensity histogram of the moving image to the intensity histogram of the fixed image. This is
-    necessary to make the image intensities consistent.
-    3. Initialize the registration by preliminary placing the moving image in the vicinity of the .
+def register(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid"):
+    """ This function takes a moving image (mov_img) and a fixed image (image).
+    It resample the moving image to the fixed image, and then register
+    the moving image first rigidly, then elastically. To facilitate the registration,
+    the function:
+    1. Pre-orient the mov_img so that its direction cosines align with those of the fixed image.
+    2. Histogram matching of the atlas intensity range to the subject’s image intensity range.
+    3. Initialization of the registration by preliminary placing the moving image around the brain in the MR image.
     To this purpose, the MR image is segmented with the Felzenszwalb algorithm, and the region corresponding to
     the brain selected as the one whose centroid is closest to a reference point, assigned to each anatomical plane
     (sagittal, dorsal and transverse), and representing the average brain’s position. This reference point is
@@ -66,39 +66,80 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid
     dilated with a 3D ball structuring element of radius 10 pixels.
     5 Registration - Elastic."""
 
-    # Plot
+    slice2plot = 256
+    extract_axial_section(mov_img)
+    extract_coronal_section(mov_img)
 
-    # 1. Resampling
-    # Cast the pixel data type of the moving image to the pixel data type of the fixed image
+    # Cast the moving image to the pixel type of the fixed image
     mov_img = sitk.Cast(mov_img, fix_img.GetPixelID())
-    # Create a 3D affine transformation
+
+    # Create a 3D rigid transformation object
+    transform = sitk.Euler3DTransform()
     transform = sitk.AffineTransform(3)
-    # Set the translation, i.e. the difference between origins
-    transform.SetTranslation(np.array(fix_img.GetOrigin()) - np.array(mov_img.GetOrigin()))
     # Set the center of rotation to the center of the fixed image
-    # transform.SetCenter(fix_img.TransformContinuousIndexToPhysicalPoint([index / 2.0 for index in fix_img.GetSize()]))
+    transform.SetCenter(fix_img.TransformContinuousIndexToPhysicalPoint([index / 2.0 for index in fix_img.GetSize()]))
     # Set the rotation matrix
     fix_img_direction_cosines = np.array(fix_img.GetDirection()).reshape((3, 3))
     mov_img_direction_cosines = np.array(mov_img.GetDirection()).reshape((3, 3))
     rotation_matrix = np.dot(np.linalg.inv(fix_img_direction_cosines), mov_img_direction_cosines)
     transform.SetMatrix(rotation_matrix.flatten())
+    # Set the translation - difference between origins
+    transform.SetTranslation(np.array(fix_img.GetOrigin()) - np.array(mov_img.GetOrigin()))
+    sitk.Resample(image1=mov_img, referenceImage=fix_img, interpolator=sitk.sitkLinear, transform=transform)
 
-    # resample the moving image (the brain atlas) to fit the fixed image (MR image) space
+    extract_axial_section(mov_img)
+    extract_coronal_section(mov_img)
+
+    # 2. ALIGN DIRECTION COSINES
+    # Get the direction matrices from the fixed and moving images
+    direction_cosines_fix = np.array(fix_img.GetDirection()).reshape((3, 3))
+    direction_cosines_mov = np.array(mov_img.GetDirection()).reshape((3, 3))
+    # Calculate the rotation matrix to align the moving image with the fixed image
+    rotation_matrix = np.dot(np.linalg.inv(direction_cosines_fix), direction_cosines_mov)
+    # Apply the rotation matrix to the direction cosines of the moving image, and update direction cosines
+    direction_cosines_mov = np.dot(rotation_matrix, direction_cosines_mov)
+    # Convert the new direction cosines to a 1D list for SimpleITK
+    direction_cosines_mov_list = direction_cosines_mov.flatten().tolist()
+    # Set the new direction cosines for the moving image
+    mov_img.SetDirection(direction_cosines_mov_list)
+    # Now, 'moving_image' has been oriented to align with the direction cosines of 'fixed_image'
+
+    extract_axial_section(mov_img)
+    extract_coronal_section(mov_img)
+
+
+    # 3. ALIGN ORIGIN
+    # Get the origins of the fixed and moving images
+    fix_origin = fix_img.GetOrigin()
+    mov_origin = mov_img.GetOrigin()
+    # Calculate the differences in the x, y, and z coordinates
+    dx = fix_origin[0] - mov_origin[0]
+    dy = fix_origin[1] - mov_origin[1]
+    dz = fix_origin[2] - mov_origin[2]
+    # Update the origin of the moving image
+    mov_origin = (mov_origin[0] + dx, mov_origin[1] + dy, mov_origin[2] + dz)
+    mov_img.SetOrigin(mov_origin)
+    # Now, 'moving_image' has been translated to align its origin with the fixed image
+    extract_axial_section(mov_img)
+    extract_coronal_section(mov_img)
+
+
+    # 1. RESAMPLE MOVING IMAGE
+    # resample atlas, so that its dimension is in the same order of magnitude of the mri brain
     mov_img = sitk.Resample(image1=mov_img,  # image to resample
                             referenceImage=fix_img,  # reference image
-                            transform=transform,
-                            interpolator=sitk.sitkLinear,)  # type of interpolation
-    sitk.WriteImage(mov_img, "E:/2021_local_data/2023_Gd_synthesis/atlas/canine transformed.nii.gz")
+                            transform=sitk.Transform(),
+                            interpolator=sitk.sitkLinear, )  # type of interpolation
 
-    # Plot
-    check_registration(fix_img, mov_img)
+    extract_axial_section(mov_img)
+    extract_coronal_section(mov_img)
+
     plt.show()
 
-    # 2. MATCH INTENSITY HISTOGRAMS
+    # 4. MATCH INTENSITY HISTOGRAMS
     mov_img = sitk.HistogramMatching(image=mov_img, referenceImage=fix_img)
-    plt.show()
 
-    # 3. INITIALIZE REGISTRATION - PRE-POSITIONING
+    # 5. INITIALIZE REGISTRATION - PRE-POSITIONING
     # segment the MR image by graph-method - Felzenswalb. This method works on 2D images.
     felzenszwalb(sitk.GetArrayFromImage(mov_img), scale=3.0, sigma=0.5, min_size=5)
 
@@ -158,32 +199,15 @@ def extract_axial_section(img: sitk.Image):
     plt.title("axial")
 
 
-def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, n_slices=2):
+def check_registration(fix_img: sitk.Image, mov_img: sitk.Image):
     """It assumes a 3D image"""
     fix_img_size = fix_img.GetSize()
     mov_img_size = mov_img.GetSize()
     fix_img_spacing = fix_img.GetSpacing()
     mov_img_spacing = mov_img.GetSpacing()
-    fig, ax = plt.subplots(n_slices, 3)
-    for idx in range(n_slices):
-        nx = int(fix_img_size[0] * (idx + 1) / (n_slices + 1))
-        ny = int(fix_img_size[1] * (idx + 1) / (n_slices + 1))
-        nz = int(fix_img_size[2] * (idx + 1) / (n_slices + 1))
-        fix_img_slice = sitk.Extract(fix_img, [fix_img_size[0], fix_img_size[1], 0], [0, 0, nz])
-        mov_img_slice = sitk.Extract(mov_img, [mov_img_size[0], mov_img_size[1], 0], [0, 0, nz])
-        ax[idx, 0].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', aspect=fix_img_spacing[1] / fix_img_spacing[0])
-        ax[idx, 0].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.5, aspect=mov_img_spacing[1] / mov_img_spacing[0])
-        ax[idx, 0].set_axis_off()
-        ax[idx, 0].set_title("xy - axial")
-        fix_img_slice = sitk.Extract(fix_img, [0, fix_img_size[1], fix_img_size[2]], [nx, 0, 0])
-        mov_img_slice = sitk.Extract(mov_img, [0, mov_img_size[1], mov_img_size[2]], [nx, 0, 0])
-        ax[idx, 1].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', aspect=fix_img_spacing[2] / fix_img_spacing[1])
-        ax[idx, 1].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.5, aspect=mov_img_spacing[2] / mov_img_spacing[1])
-        ax[idx, 1].set_axis_off()
-        ax[idx, 1].set_title("yz - sagittal")
-        fix_img_slice = sitk.Extract(fix_img, [fix_img_size[0], 0, fix_img_size[2]], [0, ny, 0])
-        mov_img_slice = sitk.Extract(mov_img, [mov_img_size[0], 0, mov_img_size[2]], [0, ny, 0])
-        ax[idx, 2].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', aspect=fix_img_spacing[2] / fix_img_spacing[0])
-        ax[idx, 2].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.5, aspect=mov_img_spacing[2] / mov_img_spacing[0])
-        ax[idx, 2].set_axis_off()
-        ax[idx, 2].set_title("xz - coronal")
+    n = int(size[2] / 2)
+    img_slice = sitk.Extract(img, [size[0], size[1], 0], [0, 0, n])
+    plt.figure()
+    plt.imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', aspect=spacing[1] / spacing[0])
+    plt.axis("off")
+    plt.title("axial")

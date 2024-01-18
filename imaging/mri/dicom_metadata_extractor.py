@@ -9,9 +9,9 @@ import os
 import pydicom
 import pandas as pd
 import datetime
-from utilities import cosines_to_patient
+from imaging.mri.backup.utilities import cosines_to_patient
 
-# Create an empty DataFrame
+# Create an empty list -> to be converted into DataFrame
 df = []
 # Assuming main/patient/study/series/
 # E:\2021_local_data\2023_Gd_synthesis\DICOM\DICOM1\IMediaExport\DICOM\PAT_0000\STD_0000\SER_0000\OBJ_0001

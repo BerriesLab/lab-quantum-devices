@@ -1,9 +1,5 @@
 import pandas as pd
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import SimpleITK as sitk
-from utilities import *
+from imaging.mri.utilities import *
 
 # Skull stripping is performed on T1, 1T1 and 1/2T1 MR images. To the purpose of model training,
 # save the pairs (skull, brain segment): the brain segment will be used to weight the registration and model training.
@@ -54,7 +50,7 @@ for key, grp in grouped:
     mri = read_dicom_series(path)
 
     # register atlas to mr image
-    registered = register(fix_img=mri, mov_img=atlas, registration="rigid")
+    registered = register_brain(fix_img=mri, mov_img=atlas, registration="rigid")
     slice_to_plot = 50
 
     # Plot the slice using Matplotlib
