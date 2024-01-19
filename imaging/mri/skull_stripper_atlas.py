@@ -6,8 +6,8 @@ from imaging.mri.utilities import *
 
 # load canine brain atlas
 # atlas = sitk.ReadImage("/Users/berri/Medical Imaging/mri/brain atlas/canine.nii.gz")
-atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Johnson v2/Canine_population_template.nii.gz")
-#atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Nitzsche/canine_template.nii.gz")
+atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Johnson et al 2019 Canine Atlas v2/Canine_population_template.nii.gz")
+# atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Niztsche et al 2018 Canine Atlas/canine_template.nii.gz")
 img = sitk.GetArrayFromImage(atlas)
 
 # load database
