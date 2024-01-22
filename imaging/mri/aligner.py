@@ -1,6 +1,5 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 import mplcursors
 import SimpleITK as sitk
 
@@ -9,6 +8,8 @@ class BrainAligner:
 
     def __init__(self, fix_img: sitk.Image, mov_img: sitk.Image):
 
+        self.ax = None
+        self.fig = None
         self.ax_mov_img_yz = None
         self.ax_mov_img_xz = None
         self.ax_mov_img_xy = None
@@ -21,7 +22,18 @@ class BrainAligner:
         self.click2 = None
         self.fix_img_xyz = np.array([fix_img.GetSize()[0] // 2, fix_img.GetSize()[1] // 2, fix_img.GetSize()[2] // 2], dtype=sitk.VectorUInt32)  # current coordinates of fixed image center
         self.mov_img_xyz = np.array([mov_img.GetSize()[0] // 2, mov_img.GetSize()[1] // 2, mov_img.GetSize()[2] // 2], dtype=sitk.VectorUInt32)  # current coordinates of moving image center
-
+    
+    def execute(self):
+        self.create_figure()
+        self.place_fix_img()
+        self.fig.canvas.mpl_connect('button_press_event', self.on_click)
+        self.fig.canvas.mpl_connect('close_event', self.on_close)
+        mplcursors.cursor(hover=True)
+        plt.tight_layout()
+        plt.show(block=False)
+        self.fig.canvas.start_event_loop()
+    
+    def create_figure(self):
         # Create a figure and axis
         self.fig, self.ax = plt.subplots(1, 3)
         for idx, item in enumerate(self.ax.flatten()):
@@ -30,7 +42,7 @@ class BrainAligner:
         self.ax[0].set_label("xy")
         self.ax[1].set_label("xz")
         self.ax[2].set_label("yz")
-
+    
     def place_fix_img(self,):
         # Display fixed image - xy plane - Extent order: left, right, bottom, top
         img_slice = sitk.Extract(self.fix_img, [self.fix_img.GetSize()[0], self.fix_img.GetSize()[1], 0], [0, 0, self.fix_img_xyz[2]])
@@ -62,14 +74,6 @@ class BrainAligner:
         img_slice = sitk.Extract(self.mov_img, [0, self.mov_img.GetSize()[1], self.mov_img.GetSize()[2]], [self.mov_img_xyz[0], 0, 0])
         extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
         self.ax_mov_img_yz = self.ax[2].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='jet', extent=extent, alpha=0.3)
-
-    def execute(self):
-        self.fig.canvas.mpl_connect('button_press_event', self.on_click)
-        self.fig.canvas.mpl_connect('close_event', self.on_close)
-        mplcursors.cursor(hover=True)
-        plt.tight_layout()
-        plt.show(block=False)
-        self.fig.canvas.start_event_loop()
 
     def on_close(self, event):
         self.fig.canvas.stop_event_loop()
