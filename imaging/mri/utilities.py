@@ -2,6 +2,7 @@ import numpy as np
 import SimpleITK as sitk
 from skimage.segmentation import felzenszwalb
 import matplotlib.pyplot as plt
+from aligner import BrainAligner
 
 
 def cosines_to_patient(direction_cosines):
@@ -100,74 +101,77 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid
     check_registration(fix_img, mov_img, [int(x/2) for x in fix_img.GetSize()], [int(x/2) for x in mov_img.GetSize()])
     plt.show()
 
+    BrainAligner(fix_img, mov_img)
+
     # 3. INITIALIZE REGISTRATION - PRE-POSITIONING
     # segment the MR image by graph-method - Felzenswalb. This method works on 2D images.
     # First, we find the position of the brain center in the MR image...
-    p_xy = mark_slice(fix_img, fix_img.GetSize()[2] // 2, 12, 5, "axial")
-    p_xz = mark_slice(fix_img, fix_img.GetSize()[1] // 2, 12, 5, "coronal")
-    p_yz = mark_slice(fix_img, fix_img.GetSize()[0] // 2, 12, 5, "sagittal")
-    fix_img_x = int((p_xy[0] + p_xz[0]) / 2)
-    fix_img_y = int((p_xy[1] + p_yz[0]) / 2)
-    fix_img_z = int((p_xz[1] + p_yz[1]) / 2)
-    # and the position of the brain center in the brain atlas.
-    p_xy = mark_slice(mov_img, mov_img.GetSize()[2] // 2, 12, 5, "axial")
-    p_xz = mark_slice(mov_img, mov_img.GetSize()[1] // 2, 12, 5, "coronal")
-    p_yz = mark_slice(mov_img, mov_img.GetSize()[0] // 2, 12, 5, "sagittal")
-    mov_img_x = int((p_xy[0] + p_xz[0]) / 2)
-    mov_img_y = int((p_xy[1] + p_yz[0]) / 2)
-    mov_img_z = int((p_xz[1] + p_yz[1]) / 2)
-
-    # Create a translation transform
-    transform = sitk.TranslationTransform(mov_img.GetDimension())
-    transform.SetOffset([fix_img_x - mov_img_x,
-                         fix_img_y - mov_img_y,
-                         fix_img_z - mov_img_z])
-    mov_img = sitk.Resample(mov_img, transform, sitk.sitkLinear, 0.0, mov_img.GetPixelID())
-    fix_img_slice_xy = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, fix_img_z])
-    reg_img_slice_xy = sitk.Extract(mov_img, [mov_img.GetSize()[0], mov_img.GetSize()[1], 0], [0, 0, mov_img_z])
-    plt.imshow(sitk.GetArrayViewFromImage(fix_img_slice_xy), cmap="grey")
-    plt.imshow(sitk.GetArrayViewFromImage(reg_img_slice_xy), cmap="jet", alpha=0.3)
-    plt.show()
-
-    # We need the size of the brain atlas - to segment the brain in the MR image with the Felzenswalb algorithm
-    mov_img_mask = sitk.BinaryThreshold(mov_img, lowerThreshold=-1, upperThreshold=0, insideValue=0, outsideValue=1)
-    mov_img_stats = sitk.LabelStatisticsImageFilter()
-    mov_img_stats.Execute(mov_img_mask, mov_img_mask)
-    brain_bbox = mov_img_stats.GetBoundingBox(label=1)
-    brain_x_size = brain_bbox[1] - brain_bbox[0] + 1
-    brain_y_size = brain_bbox[3] - brain_bbox[2] + 1
-    brain_z_size = brain_bbox[5] - brain_bbox[4] + 1
-    brain_xy_size = np.sqrt(brain_x_size * brain_y_size)
-    brain_xz_size = np.sqrt(brain_x_size * brain_z_size)
-    brain_yz_size = np.sqrt(brain_y_size * brain_z_size)
-
-    # Now we segment the brain in the MR image
-    # fix_img_slice_xy = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, 50])
-    # fix_img_mask_xy = felzenszwalb(sitk.GetArrayFromImage(fix_img_slice_xy), scale=1000, sigma=0.5, min_size=1000)
+    # n = 10
+    # p_xy = mark_slice(fix_img, fix_img.GetSize()[2] // 2, n, 5, "axial")
+    # p_xz = mark_slice(fix_img, fix_img.GetSize()[1] // 2, n, 5, "coronal")
+    # p_yz = mark_slice(fix_img, fix_img.GetSize()[0] // 2, n, 5, "sagittal")
+    # fix_img_x = int((p_xy[0] + p_xz[0]) / 2)
+    # fix_img_y = int((p_xy[1] + p_yz[0]) / 2)
+    # fix_img_z = int((p_xz[1] + p_yz[1]) / 2)
+    # # and the position of the brain center in the brain atlas.
+    # p_xy = mark_slice(mov_img, mov_img.GetSize()[2] // 2, n, 5, "axial")
+    # p_xz = mark_slice(mov_img, mov_img.GetSize()[1] // 2, n, 5, "coronal")
+    # p_yz = mark_slice(mov_img, mov_img.GetSize()[0] // 2, n, 5, "sagittal")
+    # mov_img_x = int((p_xy[0] + p_xz[0]) / 2)
+    # mov_img_y = int((p_xy[1] + p_yz[0]) / 2)
+    # mov_img_z = int((p_xz[1] + p_yz[1]) / 2)
+    #
+    # # Create a translation transform
+    # transform = sitk.TranslationTransform(mov_img.GetDimension())
+    # transform.SetOffset([fix_img_x - mov_img_x,
+    #                      fix_img_y - mov_img_y,
+    #                      fix_img_z - mov_img_z])
+    # mov_img = sitk.Resample(mov_img, transform, sitk.sitkLinear, 0.0, mov_img.GetPixelID())
+    # fix_img_slice_xy = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, fix_img_z])
+    # reg_img_slice_xy = sitk.Extract(mov_img, [mov_img.GetSize()[0], mov_img.GetSize()[1], 0], [0, 0, mov_img_z])
     # plt.imshow(sitk.GetArrayViewFromImage(fix_img_slice_xy), cmap="grey")
-    # plt.imshow(fix_img_mask_xy, alpha=0.3, cmap="jet")
+    # plt.imshow(sitk.GetArrayViewFromImage(reg_img_slice_xy), cmap="jet", alpha=0.3)
     # plt.show()
-
-    # mov_img_slice_xy = sitk.Extract(mov_img, [mov_img.GetSize()[0], mov_img.GetSize()[1], 0], [0, 0, 50])
-    # mov_img_slice_xy_mask = sitk.BinaryThreshold(mov_img_slice_xy, lowerThreshold=-1, upperThreshold=0, insideValue=0, outsideValue=1)
-    # mov_img_slice_xy_stats = sitk.LabelStatisticsImageFilter()
-    # mov_img_slice_xy_stats.Execute(mov_img_mask, mov_img_mask)
-    # mov_img_slice_xy.stats.GetSum(label=1)
-    # mov_img_slice_xy_stats.GetBoundingBox(label=1)
-
-    # 6. REGISTRATION
-    elastixImageFilter = sitk.ElastixImageFilter()
-    elastixImageFilter.SetFixedImage(fix_img)
-    elastixImageFilter.SetMovingImage(mov_img)
-    elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
-    elastixImageFilter.Execute()
-    reg_img = elastixImageFilter.GetResultImage()
-
-    fix_img_slice_xy = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, 50])
-    reg_img_slice_xy = sitk.Extract(reg_img, [reg_img.GetSize()[0], reg_img.GetSize()[1], 0], [0, 0, 50])
-    plt.imshow(sitk.GetArrayViewFromImage(fix_img_slice_xy), cmap="grey")
-    plt.imshow(sitk.GetArrayViewFromImage(reg_img_slice_xy), cmap="jet", alpha=0.3)
-    plt.show()
+    #
+    # # We need the size of the brain atlas - to segment the brain in the MR image with the Felzenswalb algorithm
+    # mov_img_mask = sitk.BinaryThreshold(mov_img, lowerThreshold=-1, upperThreshold=0, insideValue=0, outsideValue=1)
+    # mov_img_stats = sitk.LabelStatisticsImageFilter()
+    # mov_img_stats.Execute(mov_img_mask, mov_img_mask)
+    # brain_bbox = mov_img_stats.GetBoundingBox(label=1)
+    # brain_x_size = brain_bbox[1] - brain_bbox[0] + 1
+    # brain_y_size = brain_bbox[3] - brain_bbox[2] + 1
+    # brain_z_size = brain_bbox[5] - brain_bbox[4] + 1
+    # brain_xy_size = np.sqrt(brain_x_size * brain_y_size)
+    # brain_xz_size = np.sqrt(brain_x_size * brain_z_size)
+    # brain_yz_size = np.sqrt(brain_y_size * brain_z_size)
+    #
+    # # Now we segment the brain in the MR image
+    # # fix_img_slice_xy = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, 50])
+    # # fix_img_mask_xy = felzenszwalb(sitk.GetArrayFromImage(fix_img_slice_xy), scale=1000, sigma=0.5, min_size=1000)
+    # # plt.imshow(sitk.GetArrayViewFromImage(fix_img_slice_xy), cmap="grey")
+    # # plt.imshow(fix_img_mask_xy, alpha=0.3, cmap="jet")
+    # # plt.show()
+    #
+    # # mov_img_slice_xy = sitk.Extract(mov_img, [mov_img.GetSize()[0], mov_img.GetSize()[1], 0], [0, 0, 50])
+    # # mov_img_slice_xy_mask = sitk.BinaryThreshold(mov_img_slice_xy, lowerThreshold=-1, upperThreshold=0, insideValue=0, outsideValue=1)
+    # # mov_img_slice_xy_stats = sitk.LabelStatisticsImageFilter()
+    # # mov_img_slice_xy_stats.Execute(mov_img_mask, mov_img_mask)
+    # # mov_img_slice_xy.stats.GetSum(label=1)
+    # # mov_img_slice_xy_stats.GetBoundingBox(label=1)
+    #
+    # # 6. REGISTRATION
+    # elastixImageFilter = sitk.ElastixImageFilter()
+    # elastixImageFilter.SetFixedImage(fix_img)
+    # elastixImageFilter.SetMovingImage(mov_img)
+    # elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
+    # elastixImageFilter.Execute()
+    # reg_img = elastixImageFilter.GetResultImage()
+    #
+    # fix_img_slice_xy = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, 50])
+    # reg_img_slice_xy = sitk.Extract(reg_img, [reg_img.GetSize()[0], reg_img.GetSize()[1], 0], [0, 0, 50])
+    # plt.imshow(sitk.GetArrayViewFromImage(fix_img_slice_xy), cmap="grey")
+    # plt.imshow(sitk.GetArrayViewFromImage(reg_img_slice_xy), cmap="jet", alpha=0.3)
+    # plt.show()
 
 
     return
@@ -258,7 +262,7 @@ def mark_slice(img: sitk.Image, n0, n, dn, direction="axial"):
     - sagittal: yz plane or separating left from right"""
 
     plt.ion()
-    fig, axes = plt.subplots(int(np.ceil(n / 4)), 4)
+    fig, axes = plt.subplots(int(np.ceil(n / 5)), 5)
     axes = axes.flatten()
 
     for i in range(n):
