@@ -11,10 +11,6 @@ class BrainAligner:
 
         self.fix_img = fix_img
         self.mov_img = mov_img
-        self.fix_img_spacings = fix_img.GetSpacing()
-        self.mov_img_spacings = mov_img.GetSpacing()
-        self.fix_img_size = fix_img.GetSize()
-        self.mov_img_size = mov_img.GetSize()
         self.click1 = None
         self.click2 = None
         self.ax_fix_img = None
@@ -26,12 +22,20 @@ class BrainAligner:
 
         # Display the fixed image
         img_slice = sitk.Extract(self.fix_img, [self.fix_img.GetSize()[0], self.fix_img.GetSize()[1], 0], [0, 0, self.fix_img.GetSize()[2] // 2])
-        extent = [0, self.fix_img.GetSize()[0], -self.fix_img.GetSize()[1], 0]  # left, right, bottom, top
+        # Extent order: left, right, bottom, top
+        extent = [0,
+                  0 + img_slice.GetSize()[0],
+                  0 - img_slice.GetSize()[1],
+                  0]
         self.ax_fix_img = self.ax.imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', extent=extent)
 
         # Display the moving image using OffsetImage
         img_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], self.mov_img.GetSize()[1], 0], [0, 0, self.mov_img.GetSize()[2] // 2])
-        extent = [0, self.mov_img.GetSize()[0], -self.mov_img.GetSize()[1], 0]  # left, right, bottom, top
+        # Extent order: left, right, bottom, top
+        extent = [0,
+                  0 + img_slice.GetSize()[0],
+                  0 - img_slice.GetSize()[1],
+                  0]
         self.ax_mov_img = self.ax.imshow(sitk.GetArrayFromImage(img_slice), cmap='jet', extent=extent, alpha=0.3)
 
         # Connect the onclick event to the function
@@ -54,16 +58,18 @@ class BrainAligner:
             self.move_image()
 
     def move_image(self):
-        # Calculate the offset
-        offset_x = self.click2[0] - self.click1[0]
-        offset_y = self.click2[1] - self.click1[1]
+        # Calculate the offset: target location - starting location
+        dx = self.click2[0] - self.click1[0]
+        dy = self.click2[1] - self.click1[1]
+        print(dx, dy)
 
         # Display the moving image using OffsetImage
         img_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], self.mov_img.GetSize()[1], 0], [0, 0, self.mov_img.GetSize()[2] // 2])
-        extent = [self.click1[0] + offset_x,
-                  self.click1[0] + offset_x + img_slice.GetSize()[0],
-                  self.click1[1] + offset_y + img_slice.GetSize()[1],
-                  self.click1[1] + offset_y]
+        # Extent order: left, right, bottom, top
+        extent = [0 - dx,
+                  0 + img_slice.GetSize()[0] - dx,
+                  0 - img_slice.GetSize()[1] - dy,
+                  0 - dy]
         self.ax_mov_img.set_array(sitk.GetArrayFromImage(img_slice))
         self.ax_mov_img.set_extent(extent)
         self.fig.canvas.draw()
