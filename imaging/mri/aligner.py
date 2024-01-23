@@ -42,12 +42,20 @@ class BrainAligner:
         coordinates and press "Return". Then the functions plots an"""
         self.create_figure()
         self.place_img(self.fix_img, self.i0, self.j0, self.k0)
-        self.fig.canvas.mpl_connect('button_press_event', self.on_click_center)
-        self.fig.canvas.mpl_connect('key_press_event', self.on_key_return)
-        mplcursors.cursor(hover=True)
         plt.tight_layout()
+
+        self.fig.canvas.mpl_connect('button_press_event', self.on_click_center)
         plt.show(block=False)
-        self.fig.canvas.start_event_loop()
+        mplcursors.cursor(hover=True)
+        plt.show()
+
+        flag = 0
+        while flag == 0:
+
+            # flag = self.fig.canvas.mpl_connect('key_press_event', self.on_key_return)
+            mplcursors.cursor(hover=True)
+
+        #self.fig.canvas.start_event_loop()
 
         # self.fig.canvas.mpl_connect('button_press_event', self.on_click_move)
         # self.fig.canvas.mpl_connect('close_event', self.on_close)
@@ -91,23 +99,6 @@ class BrainAligner:
                   0]
         self.ax[2].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
 
-    # def place_fix_img(self,):
-    #
-    #     # Display fixed image - xy plane - Extent order: left, right, bottom, top
-    #     img_slice = sitk.Extract(self.fix_img, [self.fix_img.GetSize()[0], self.fix_img.GetSize()[1], 0], [0, 0, self.i0j0k0])
-    #     extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
-    #     self.ax_fix_img_xy = self.ax[0].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
-    #
-    #     # Display fixed image - xz plane
-    #     img_slice = sitk.Extract(self.fix_img, [self.fix_img.GetSize()[0], 0, self.fix_img.GetSize()[2]], [0, self.fix_img_slice[1], 0])
-    #     extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
-    #     self.ax_fix_img_xz = self.ax[1].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
-    #
-    #     # Display fixed image - xy plane
-    #     img_slice = sitk.Extract(self.fix_img, [0, self.fix_img.GetSize()[1], self.fix_img.GetSize()[2]], [self.fix_img_slice[0], 0, 0])
-    #     extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
-    #     self.ax_fix_img_yz = self.ax[2].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
-
     def place_mov_img(self,):
         # Display moving image - xy plane - Extent order: left, right, bottom, top
         img_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], self.mov_img.GetSize()[1], 0], [0, 0, self.mov_img_xyz[2]])
@@ -139,22 +130,23 @@ class BrainAligner:
                 self.on_click_move()
             self.move_image()
 
-    def on_click_center(self, event):
-        self.click1 = (event.x, event.y, event.inaxes.get_label())
+    def on_click_center(self, event, layer=0):
+        self.click1 = (event.xdata, event.ydata, event.inaxes.get_label())
         print(f'Click 1 at ({self.click1[0]}, {self.click1[1]}) on {self.click1[2]}')
         if self.click1[2] == "xy":
-            self.i, self.j = self.click1[0], self.click1[1]
+            self.i, self.j = int(self.click1[0]//self.fix_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[1])
         if self.click1[2] == "xz":
-            self.i, self.k = self.click1[0], self.click2[1]
+            self.i, self.k = int(self.click1[0]//self.fix_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[2])
         if self.click1[2] == "yz":
-            self.j, self.k = self.click1[0], self.click2[1]
-        self.update_plot(self.fix_img)
+            self.j, self.k = int(self.click1[0]//self.fix_img.GetSpacing()[1]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[2])
+        self.update_plot(self.fix_img, 0)
         self.click1 = None
 
     def on_key_return(self, event):
         if event.key == "enter":
-            print(f"Fix image new origin: {self.fix_img_xyz}")
-            self.place_fix_img()
+            print(f"Center slice: {self.i, self.j, self.k}")
+            return 1
+        return 0
 
     def move_image(self):
         """"""
