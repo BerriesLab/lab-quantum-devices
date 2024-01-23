@@ -9,7 +9,8 @@ class BrainAligner:
     def __init__(self, fix_img: sitk.Image, mov_img: sitk.Image):
         """
         The physical space is described by the (x, y, z) coordinate system
-        The image space is described by the (i, j, k) coordinate system
+        The fixed image space is described by the (i, j, k) coordinate system
+        The moving image space is described by the (l, m, n) coordinate system
         """
 
         self.ax = None
@@ -25,14 +26,12 @@ class BrainAligner:
         self.click1 = None
         self.click2 = None
 
-        # Initial image slice
+        # Fixed image slice
         self.i0, self.j0, self.k0 = fix_img.GetSize()[0] // 2, fix_img.GetSize()[1] // 2, fix_img.GetSize()[2] // 2
         self.i, self.j, self.k = self.i0, self.j0, self.k0
-
-        # self.fix_img_slice = np.array([fix_img.GetSize()[0] // 2, fix_img.GetSize()[1] // 2, fix_img.GetSize()[2] // 2], dtype=sitk.VectorUInt32)
-        # self.fix_img_slice_physical_space = self.fix_img.TransformIndexToPhysicalPoint(self.fix_img_slice)
-        # Initial (x0, y0, z0) and new (x, y, z) coordinates of moving image center
-        # self.mov_img_x0y0z0 = np.array([mov_img.GetSize()[0] // 2, mov_img.GetSize()[1] // 2, mov_img.GetSize()[2] // 2], dtype=sitk.VectorUInt32)  # current coordinates of moving image center
+        # Moving image slice
+        self.l0, self.m0, self.n0 = mov_img.GetSize()[0] // 2, mov_img.GetSize()[1] // 2, mov_img.GetSize()[2] // 2
+        self.l, self.m, self.n = self.l0, self.m0, self.n0
 
     def execute(self):
         """In the order, the function creates a figure with 3 subplots (xy, xz and yz planes). Then, plots sections of the fixed image (MR image)
@@ -40,7 +39,8 @@ class BrainAligner:
         clicking on the xz sections. This automatically acquires the x and y coordinates, and set them as the new origin. Then, it updates the plots
         with the sections passing through the new coordinates. The centering continues until the user is satisfied with their selection of
         coordinates and press "Return". Then the functions plots an"""
-        self.create_figure()
+        self.create_figure("Click to center the image. Press 'Return' to store the coordinates")
+
         self.place_img(self.fix_img, self.i0, self.j0, self.k0)
         plt.tight_layout()
         self.fig.canvas.mpl_connect('button_press_event', self.on_click_center)
@@ -49,17 +49,7 @@ class BrainAligner:
         mplcursors.cursor(hover=True)
         plt.show()
 
-
-
-        #self.fig.canvas.start_event_loop()
-
-        # self.fig.canvas.mpl_connect('button_press_event', self.on_click_move)
-        # self.fig.canvas.mpl_connect('close_event', self.on_close)
-        # mplcursors.cursor(hover=True)
-        # plt.tight_layout()
-        # plt.show(block=False)
-
-    def create_figure(self):
+    def create_figure(self, title):
         # Create a figure and axis
         self.fig, self.ax = plt.subplots(1, 3)
         for idx, item in enumerate(self.ax.flatten()):
@@ -68,6 +58,7 @@ class BrainAligner:
         self.ax[0].set_label("xy")
         self.ax[1].set_label("xz")
         self.ax[2].set_label("yz")
+        self.fig.suptitle(title)
 
     def place_img(self, img, i, j, k):
 
@@ -141,8 +132,7 @@ class BrainAligner:
     def on_key_return(self, event):
         if event.key == "enter":
             print(f"Center slice: {self.i, self.j, self.k}")
-            return 1
-        return 0
+
 
     def move_image(self):
         """"""
@@ -207,26 +197,4 @@ class BrainAligner:
         self.ax[2].images[n].set_extent(extent)
 
         self.fig.canvas.draw()
-
-    # def update_plot(self, img: sitk.Image):
-    #
-    #     # update xy
-    #     img_slice = sitk.Extract(img, [img.GetSize()[0], img.GetSize()[1], 0], [0, 0, img.()[2]])
-    #     extent = [0 - dx, (0 + img_slice.GetSize()[0] - dx) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1] - dy) * img_slice.GetSpacing()[1], 0 - dy]
-    #     self.ax_mov_img_xy.set_array(sitk.GetArrayFromImage(img_slice))
-    #     self.ax_mov_img_xy.set_extent(extent)
-    #
-    #     # update xz
-    #     img_slice = sitk.Extract(img, [img.GetSize()[0], 0, img.GetSize()[2]], [0, img.GetOrigin()[1] + dy, 0])
-    #     extent = [0 - dx, (0 + img_slice.GetSize()[0] - dx) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1] - dz) * img_slice.GetSpacing()[1], 0 - dz]
-    #     self.ax_mov_img_xz.set_array(sitk.GetArrayFromImage(img_slice))
-    #     self.ax_mov_img_xz.set_extent(extent)
-    #
-    #     # update yz
-    #     img_slice = sitk.Extract(img, [0, img.GetSize()[1], img.GetSize()[2]], [img.GetOrigin() + dx, 0, 0])
-    #     extent = [0 - dy, (0 + img_slice.GetSize()[0] - dy) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1] - dz) * img_slice.GetSpacing()[1], 0 - dz]
-    #     self.ax_mov_img_yz.set_array(sitk.GetArrayFromImage(img_slice))
-    #     self.ax_mov_img_yz.set_extent(extent)
-    #
-    #     self.fig.canvas.draw()
 
