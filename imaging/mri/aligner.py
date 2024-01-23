@@ -197,8 +197,7 @@ class BrainAligner:
         self.click2 = None
 
     def update_plot(self, img1: sitk.Image, img2: sitk.Image):
-        """Update the displayed slices. The layer is the number of the overlayed image: 0 for the fixed image,
-        and 1 for the moving image on top."""
+        """Update the displayed slices."""
         # update xy
         img_slice = sitk.Extract(img1, [img1.GetSize()[0], img1.GetSize()[1], 0], [0, 0, self.k])
         extent = [0,
