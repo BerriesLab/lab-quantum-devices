@@ -41,7 +41,7 @@ class BrainAligner:
         coordinates and press "Return". Then the functions plots an"""
         self.create_figure("Click to center the image. Press 'Return' to store the coordinates")
 
-        self.place_img(self.fix_img, self.i0, self.j0, self.k0)
+        self.place_img(self.fix_img, self.i0, self.j0, self.k0, self.mov_img, self.l0, self.m0, self.n0)
         plt.tight_layout()
         self.fig.canvas.mpl_connect('button_press_event', self.on_click_center)
         self.fig.canvas.mpl_connect('key_press_event', self.on_key_return)
@@ -51,40 +51,67 @@ class BrainAligner:
 
     def create_figure(self, title):
         # Create a figure and axis
-        self.fig, self.ax = plt.subplots(1, 3)
+        self.fig, self.ax = plt.subplots(2, 3)
         for idx, item in enumerate(self.ax.flatten()):
             item.set_axis_off()
         # label axes - necessary for identifying the axes
-        self.ax[0].set_label("xy")
-        self.ax[1].set_label("xz")
-        self.ax[2].set_label("yz")
+        self.ax[0, 0].set_label("xy fix")
+        self.ax[0, 1].set_label("xz fix")
+        self.ax[0, 2].set_label("yz fix")
+        self.ax[1, 0].set_label("xy mov")
+        self.ax[1, 1].set_label("xz mov")
+        self.ax[1, 2].set_label("yz mov")
         self.fig.suptitle(title)
 
-    def place_img(self, img, i, j, k):
+    def place_img(self, img1: sitk.Image, i, j, k, img2: sitk.Image, l, m, n):
 
         # Display fixed image - xy plane - Extent order: left, right, bottom, top
-        img_slice = sitk.Extract(img, [img.GetSize()[0], img.GetSize()[1], 0], [0, 0, k])
+        img_slice = sitk.Extract(img1, [img1.GetSize()[0], img1.GetSize()[1], 0], [0, 0, k])
         extent = [0,
                   (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
                   (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
                   0]
-        self.ax[0].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
+        self.ax[0, 0].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
 
         # Display fixed image - xz plane
-        img_slice = sitk.Extract(img, [img.GetSize()[0], 0, img.GetSize()[2]], [0, j, 0])
+        img_slice = sitk.Extract(img1, [img1.GetSize()[0], 0, img1.GetSize()[2]], [0, j, 0])
         extent = [0,
                   (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
                   (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
                   0]
-        self.ax[1].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
+        self.ax[0, 1].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
 
         # Display fixed image - xy plane
-        img_slice = sitk.Extract(img, [0, img.GetSize()[1], img.GetSize()[2]], [i, 0, 0])
+        img_slice = sitk.Extract(img1, [0, img1.GetSize()[1], img1.GetSize()[2]], [i, 0, 0])
         extent = [0,
                   (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
                   (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
                   0]
-        self.ax[2].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
+        self.ax[0, 2].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
+
+        # Display moving image - xy plane - Extent order: left, right, bottom, top
+        img_slice = sitk.Extract(img2, [img2.GetSize()[0], img2.GetSize()[1], 0], [0, 0, n])
+        extent = [0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0]
+        self.ax[1, 0].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
+
+        # Display fixed image - xz plane
+        img_slice = sitk.Extract(img2, [img2.GetSize()[0], 0, img2.GetSize()[2]], [0, m, 0])
+        extent = [0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0]
+        self.ax[1, 1].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
+
+        # Display fixed image - xy plane
+        img_slice = sitk.Extract(img2, [0, img2.GetSize()[1], img2.GetSize()[2]], [l, 0, 0])
+        extent = [0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0]
+        self.ax[1, 2].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='gray', extent=extent)
 
     def place_mov_img(self,):
         # Display moving image - xy plane - Extent order: left, right, bottom, top
@@ -117,22 +144,29 @@ class BrainAligner:
                 self.on_click_move()
             self.move_image()
 
-    def on_click_center(self, event, layer=0):
+    def on_click_center(self, event):
         self.click1 = (event.xdata, event.ydata, event.inaxes.get_label())
         print(f'Click 1 at ({self.click1[0]}, {self.click1[1]}) on {self.click1[2]}')
-        if self.click1[2] == "xy":
+        if self.click1[2] == "xy fix":
             self.i, self.j = int(self.click1[0]//self.fix_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[1])
-        if self.click1[2] == "xz":
+        if self.click1[2] == "xz fix":
             self.i, self.k = int(self.click1[0]//self.fix_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[2])
-        if self.click1[2] == "yz":
+        if self.click1[2] == "yz fix":
             self.j, self.k = int(self.click1[0]//self.fix_img.GetSpacing()[1]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[2])
-        self.update_plot(self.fix_img, layer)
+        if self.click1[2] == "xy mov":
+            self.l, self.m = int(self.click1[0]//self.mov_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.mov_img.GetSpacing()[1])
+        if self.click1[2] == "xz mov":
+            self.l, self.n = int(self.click1[0]//self.mov_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.mov_img.GetSpacing()[2])
+        if self.click1[2] == "yz mov":
+            self.m, self.n = int(self.click1[0]//self.mov_img.GetSpacing()[1]), int(-1 * self.click1[1]//self.mov_img.GetSpacing()[2])
+        self.update_plot(self.fix_img, self.mov_img)
         self.click1 = None
 
     def on_key_return(self, event):
         if event.key == "enter":
-            print(f"Center slice: {self.i, self.j, self.k}")
-
+            print("Centering completed.")
+            print(f"Fix image center: {self.i, self.j, self.k}")
+            print(f"Mov image center: {self.l, self.m, self.n}")
 
     def move_image(self):
         """"""
@@ -162,39 +196,61 @@ class BrainAligner:
         self.click1 = None
         self.click2 = None
 
-    def update_plot(self, img: sitk.Image, layer=0):
+    def update_plot(self, img1: sitk.Image, img2: sitk.Image):
         """Update the displayed slices. The layer is the number of the overlayed image: 0 for the fixed image,
         and 1 for the moving image on top."""
-        if layer == 0:
-            n = 0
-        elif layer == 1:
-            n = 1
         # update xy
-        img_slice = sitk.Extract(img, [img.GetSize()[0], img.GetSize()[1], 0], [0, 0, self.k])
+        img_slice = sitk.Extract(img1, [img1.GetSize()[0], img1.GetSize()[1], 0], [0, 0, self.k])
         extent = [0,
                   (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
                   (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
                   0]
-        self.ax[0].images[n].set_data(sitk.GetArrayFromImage(img_slice))
-        self.ax[0].images[n].set_extent(extent)
+        self.ax[0, 0].images[0].set_data(sitk.GetArrayFromImage(img_slice))
+        self.ax[0, 0].images[0].set_extent(extent)
 
         # update xz
-        img_slice = sitk.Extract(img, [img.GetSize()[0], 0, img.GetSize()[2]], [0, self.j, 0])
+        img_slice = sitk.Extract(img1, [img1.GetSize()[0], 0, img1.GetSize()[2]], [0, self.j, 0])
         extent = [0,
                   (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
                   (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
                   0]
-        self.ax[1].images[n].set_data(sitk.GetArrayFromImage(img_slice))
-        self.ax[1].images[n].set_extent(extent)
+        self.ax[0, 1].images[0].set_data(sitk.GetArrayFromImage(img_slice))
+        self.ax[0, 1].images[0].set_extent(extent)
 
         # update yz
-        img_slice = sitk.Extract(img, [0, img.GetSize()[1], img.GetSize()[2]], [self.i, 0, 0])
+        img_slice = sitk.Extract(img1, [0, img1.GetSize()[1], img1.GetSize()[2]], [self.i, 0, 0])
         extent = [0,
                   (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
                   (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
                   0]
-        self.ax[2].images[n].set_data(sitk.GetArrayFromImage(img_slice))
-        self.ax[2].images[n].set_extent(extent)
+        self.ax[0, 2].images[0].set_data(sitk.GetArrayFromImage(img_slice))
+        self.ax[0, 2].images[0].set_extent(extent)
+
+        img_slice = sitk.Extract(img2, [img2.GetSize()[0], img2.GetSize()[1], 0], [0, 0, self.n])
+        extent = [0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0]
+        self.ax[1, 0].images[0].set_data(sitk.GetArrayFromImage(img_slice))
+        self.ax[1, 0].images[0].set_extent(extent)
+
+        # update xz
+        img_slice = sitk.Extract(img2, [img2.GetSize()[0], 0, img2.GetSize()[2]], [0, self.m, 0])
+        extent = [0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0]
+        self.ax[1, 1].images[0].set_data(sitk.GetArrayFromImage(img_slice))
+        self.ax[1, 1].images[0].set_extent(extent)
+
+        # update yz
+        img_slice = sitk.Extract(img2, [0, img1.GetSize()[1], img2.GetSize()[2]], [self.l, 0, 0])
+        extent = [0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0]
+        self.ax[1, 2].images[0].set_data(sitk.GetArrayFromImage(img_slice))
+        self.ax[1, 2].images[0].set_extent(extent)
 
         self.fig.canvas.draw()
 
