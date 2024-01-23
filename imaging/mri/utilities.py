@@ -101,7 +101,8 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid
     check_registration(fix_img, mov_img, [int(x/2) for x in fix_img.GetSize()], [int(x/2) for x in mov_img.GetSize()])
     plt.show()
 
-    BrainAligner(fix_img, mov_img)
+    brain_aligner = BrainAligner(fix_img, mov_img)
+    brain_aligner.execute()
 
     # 3. INITIALIZE REGISTRATION - PRE-POSITIONING
     # segment the MR image by graph-method - Felzenswalb. This method works on 2D images.
