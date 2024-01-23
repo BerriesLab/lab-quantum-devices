@@ -43,17 +43,13 @@ class BrainAligner:
         self.create_figure()
         self.place_img(self.fix_img, self.i0, self.j0, self.k0)
         plt.tight_layout()
-
         self.fig.canvas.mpl_connect('button_press_event', self.on_click_center)
+        self.fig.canvas.mpl_connect('key_press_event', self.on_key_return)
         plt.show(block=False)
         mplcursors.cursor(hover=True)
         plt.show()
 
-        flag = 0
-        while flag == 0:
 
-            # flag = self.fig.canvas.mpl_connect('key_press_event', self.on_key_return)
-            mplcursors.cursor(hover=True)
 
         #self.fig.canvas.start_event_loop()
 
@@ -139,7 +135,7 @@ class BrainAligner:
             self.i, self.k = int(self.click1[0]//self.fix_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[2])
         if self.click1[2] == "yz":
             self.j, self.k = int(self.click1[0]//self.fix_img.GetSpacing()[1]), int(-1 * self.click1[1]//self.fix_img.GetSpacing()[2])
-        self.update_plot(self.fix_img, 0)
+        self.update_plot(self.fix_img, layer)
         self.click1 = None
 
     def on_key_return(self, event):
