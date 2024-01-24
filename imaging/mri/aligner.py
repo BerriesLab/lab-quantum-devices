@@ -219,9 +219,6 @@ class BrainAligner:
         self.fig1.canvas.draw()
         self.fig2.canvas.draw()
 
-    def on_close(self,):
-        self.fig1.canvas.stop_event_loop()
-
     def on_click1(self, event):
         self.click1 = (event.xdata, event.ydata, event.inaxes.get_label(), event.inaxes.figure.number)
         print(f'Click 1 at ({self.click1[0]}, {self.click1[1]}) on {self.click1[2]}, fig {self.click1[3]}')
@@ -307,11 +304,16 @@ class BrainAligner:
             print("Centering completed.")
             print(f"Fix image center: {self.i, self.j, self.k}")
             print(f"Mov image center: {self.l, self.m, self.n}")
+            print(f"Transform: {self.transform}")
+            plt.close(self.fig1)
+            plt.close(self.fig2)
+            self.calculate_transform()
 
         if event.key == "r":
             """Reset the image by first inverting the transformation, and then setting the central slice."""
             print("Resetting image.")
             inverse_transform = self.transform.GetInverse()
+            self.transform = None  # the transform must be reset
             self.mov_img = sitk.Resample(self.mov_img, inverse_transform, interpolator=sitk.sitkLinear, defaultPixelValue=self.mov_img.GetPixelIDValue())
             self.i = self.i0
             self.j = self.j0
@@ -321,17 +323,25 @@ class BrainAligner:
             self.n = self.n0
             self.update_plot()
 
-        if event.key == "down":
+        if event.key == "up":
             print("Upscale atlas by a factor 1.1x")
             rescale = sitk.ScaleTransform(3)
-            scale_factors = (1.5, 0.8, 2.0)
+            scale_factors = (0.9, 0.9, 0.9)
             rescale.SetScale(scale_factors)
             # Apply the 3D scale transform to the image
-            sitk.Resample(self.mov_img, rescale)
+            self.mov_img = sitk.Resample(self.mov_img, rescale, interpolator=sitk.sitkLinear, defaultPixelValue=self.mov_img.GetPixelIDValue())
+            self.update_transform(rescale)
+            self.update_plot()
 
-        if event.key == "up":
+        if event.key == "down":
             print("Downscale atlas by a factor 0.9x")
-            rescale = sitk.ScaleTransform
+            rescale = sitk.ScaleTransform(3)
+            scale_factors = (1.1, 1.1, 1.1)
+            rescale.SetScale(scale_factors)
+            # Apply the 3D scale transform to the image
+            self.mov_img = sitk.Resample(self.mov_img, rescale, interpolator=sitk.sitkLinear, defaultPixelValue=self.mov_img.GetPixelIDValue())
+            self.update_transform(rescale)
+            self.update_plot()
 
     def update_transform(self, transform):
         """Update the transform attribute"""
@@ -339,3 +349,19 @@ class BrainAligner:
             self.transform = transform
         else:
             self.transform = sitk.CompositeTransform([self.transform, transform])
+
+    def calculate_transform(self):
+        """The overall transform aligning the brain atlas to the MR image is the composition of the
+        translation ... with the translation that aligns the position of the brain centers."""
+
+        # Calculate points in physical space
+        xyz_fix_img = self.fix_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k])
+        xyz_mov_img = self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n])
+
+        # Create a translation transform based on the corresponding points
+        sitk.LandmarkBasedTransformInitializer(sitk.TranslationTransform(), xyz_fix_img, xyz_mov_img)
+
+        print("Here")
+
+
+

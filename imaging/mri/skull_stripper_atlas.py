@@ -49,26 +49,4 @@ for key, grp in grouped:
 
     # register atlas to mr image
     registered = register_brain(fix_img=mri, mov_img=atlas, registration="rigid")
-    slice_to_plot = 50
 
-    # Plot the slice using Matplotlib
-    plt.figure(figsize=(15, 5))
-    # Plot the first image
-    plt.subplot(1, 3, 1)
-    plt.imshow(sitk.GetArrayFromImage(mri)[slice_to_plot, :, :], cmap='gray')
-    plt.title('MR')
-    plt.axis('off')  # Turn off axis labels for better visualization
-
-    # Plot the second image
-    plt.subplot(1, 3, 2)
-    plt.imshow(sitk.GetArrayFromImage(atlas)[slice_to_plot, :, :], cmap='gray')
-    plt.title('Atlas')
-    plt.axis('off')
-
-    # Plot the third image
-    plt.subplot(1, 3, 3)
-    plt.imshow(sitk.GetArrayFromImage(mri)[slice_to_plot, :, :], cmap='gray')
-    plt.imshow(sitk.GetArrayFromImage(registered)[slice_to_plot, :, :], cmap='jet', alpha=0.5)
-    plt.title('??')
-    plt.axis('off')
-    plt.show()
