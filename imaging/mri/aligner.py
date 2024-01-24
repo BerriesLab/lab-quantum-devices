@@ -214,7 +214,7 @@ class BrainAligner:
         self.fig1.canvas.draw()
         self.fig2.canvas.draw()
 
-    def place_mov_img(self,):
+    def align(self,):
         # Display moving image - xy plane - Extent order: left, right, bottom, top
         img_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], self.mov_img.GetSize()[1], 0], [0, 0, self.mov_img_xyz[2]])
         extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
@@ -232,18 +232,6 @@ class BrainAligner:
 
     def on_close(self,):
         self.fig1.canvas.stop_event_loop()
-
-    def on_click_move(self, event):
-        if self.click1 is None:
-            self.click1 = (event.xdata, event.ydata, event.inaxes.get_label(), event.inaxes.figure.number())
-            print(f'Click 1 at ({self.click1[0]}, {self.click1[1]}) on {self.click1[2]}')
-        else:
-            self.click2 = (event.xdata, event.ydata, event.inaxes.get_label())
-            print(f'Click 2 at ({self.click2[0]}, {self.click2[1]}) on {self.click2[2]}')
-            if self.click1[2] != self.click2[2]:
-                print("Clicks must be oin the same section.")
-                self.on_click_move()
-            self.move_image()
 
     def on_click1(self, event):
         self.click1 = (event.xdata, event.ydata, event.inaxes.get_label(), event.inaxes.figure.number)
@@ -297,7 +285,7 @@ class BrainAligner:
                         self.dk = int(-1 * (self.click2[1] // self.mov_img.GetSpacing()[2] - self.click1[1] // self.mov_img.GetSpacing()[2]))
 
                     print(f"di, dj, dk: {self.di}, {self.dj}, {self.dk}")
-                    self.update_plot()
+                    self.align()
 
                     # reset the clicks
                     self.click1 = None
@@ -310,27 +298,3 @@ class BrainAligner:
             print("Centering completed.")
             print(f"Fix image center: {self.i, self.j, self.k}")
             print(f"Mov image center: {self.l, self.m, self.n}")
-
-    def move_image(self):
-        """"""
-        # Calculate the offset: target location - starting location
-        if self.click1[2] == self.click2[2] == "xy":
-            dx = int(self.click2[0] - self.click1[0])
-            dy = int(self.click2[1] - self.click1[1])
-            dz = 0
-            print(f"dx, dy, dz: {dx}, {dy}, {dz}")
-            self.update_plot()
-
-        if self.click1[2] == self.click2[2] == "xz":
-            dx = int(self.click2[0] - self.click1[0])
-            dy = 0
-            dz = int(self.click2[1] - self.click1[1])
-            print(f"dx, dy, dz: {dx}, {dy}, {dz}")
-            self.update_plot()
-
-        if self.click1[2] == self.click2[2] == "yz":
-            dx = 0
-            dy = int(self.click2[0] - self.click1[0])
-            dz = int(self.click2[1] - self.click1[1])
-            print(f"dx, dy, dz: {dx}, {dy}, {dz}")
-            self.update_plot()
