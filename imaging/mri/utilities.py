@@ -98,12 +98,11 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid
 
     # 2. MATCH INTENSITY HISTOGRAMS
     mov_img = sitk.HistogramMatching(image=mov_img, referenceImage=fix_img)
-    check_registration(fix_img, mov_img, [int(x/2) for x in fix_img.GetSize()], [int(x/2) for x in mov_img.GetSize()])
+    check_registration(fix_img, mov_img)
     plt.show()
 
     brain_aligner = BrainAligner(fix_img, mov_img)
     brain_aligner.execute()
-    print("brain aligner")
     check_registration(fix_img, sitk.Resample(mov_img, brain_aligner.transform))
     plt.show()
 
@@ -122,7 +121,6 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid
     # plt.imshow(sitk.GetArrayViewFromImage(fix_img_slice_xy), cmap="grey")
     # plt.imshow(sitk.GetArrayViewFromImage(reg_img_slice_xy), cmap="jet", alpha=0.3)
     # plt.show()
-
 
     return
 
@@ -166,39 +164,55 @@ def extract_axial_section(img: sitk.Image, n=None):
     plt.title("axial")
 
 
-def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, fix_xyz=[], mov_xyz=[]):
-    """It assumes a 3D image"""
-    fix_img_size = fix_img.GetSize()
-    mov_img_size = mov_img.GetSize()
-    fix_img_spacing = fix_img.GetSpacing()
-    mov_img_spacing = mov_img.GetSpacing()
+def check_registration(fix_img: sitk.Image, mov_img: sitk.Image):
+    """It assumes that the """
+    slice = [int(x // 2) for x in fix_img.GetSize()]
     fig, ax = plt.subplots(1, 3)
-    if len(fix_xyz) != 3:
-        fix_xyz = [int(fix_img_size[0] / 2),
-                   int(fix_img_size[1] / 2),
-                   int(fix_img_size[2] / 2)]
-    if len(mov_xyz) != 3:
-        mov_xyz = [int(fix_img_size[0] / 2),
-                   int(fix_img_size[1] / 2),
-                   int(fix_img_size[2] / 2)]
-    fix_img_slice = sitk.Extract(fix_img, [fix_img_size[0], fix_img_size[1], 0], [0, 0, fix_xyz[2]])
-    mov_img_slice = sitk.Extract(mov_img, [mov_img_size[0], mov_img_size[1], 0], [0, 0, mov_xyz[2]])
-    ax[0].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', aspect=fix_img_spacing[1] / fix_img_spacing[0])
-    ax[0].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, aspect=mov_img_spacing[1] / mov_img_spacing[0])
-    ax[0].set_axis_off()
+    for item in ax.flatten():
+        item.set_axis_off()
+
     ax[0].set_title("xy - axial")
-    fix_img_slice = sitk.Extract(fix_img, [0, fix_img_size[1], fix_img_size[2]], [fix_xyz[0], 0, 0])
-    mov_img_slice = sitk.Extract(mov_img, [0, mov_img_size[1], mov_img_size[2]], [mov_xyz[0], 0, 0])
-    ax[1].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', aspect=fix_img_spacing[2] / fix_img_spacing[1])
-    ax[1].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, aspect=mov_img_spacing[2] / mov_img_spacing[1])
-    ax[1].set_axis_off()
-    ax[1].set_title("yz - sagittal")
-    fix_img_slice = sitk.Extract(fix_img, [fix_img_size[0], 0, fix_img_size[2]], [0, fix_xyz[1], 0])
-    mov_img_slice = sitk.Extract(mov_img, [mov_img_size[0], 0, mov_img_size[2]], [0, mov_xyz[1], 0])
-    ax[2].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', aspect=fix_img_spacing[2] / fix_img_spacing[0])
-    ax[2].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, aspect=mov_img_spacing[2] / mov_img_spacing[0])
-    ax[2].set_axis_off()
-    ax[2].set_title("xz - coronal")
+    fix_img_slice = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, slice[2]])
+    mov_img_slice = sitk.Extract(mov_img, [mov_img.GetSize()[0], mov_img.GetSize()[1], 0], [0, 0, slice[2]])
+    fix_img_extent = [0,
+                      (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
+                      (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
+                      0]
+    mov_img_extent = [0,
+                      (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
+                      (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
+                      0]
+    ax[0].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
+    ax[0].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+
+    ax[1].set_title("xz - coronal")
+    fix_img_slice = sitk.Extract(fix_img, [fix_img.GetSize()[0], 0, fix_img.GetSize()[2]], [0, slice[1], 0])
+    mov_img_slice = sitk.Extract(mov_img, [mov_img.GetSize()[0], 0, mov_img.GetSize()[2]], [0, slice[1], 0])
+    fix_img_extent = [0,
+                      (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
+                      (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
+                       0]
+    mov_img_extent = [0,
+                      (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
+                      (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
+                      0]
+    ax[1].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
+    ax[1].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+
+    ax[2].set_title("yz - sagittal")
+    fix_img_slice = sitk.Extract(fix_img, [0, fix_img.GetSize()[1], fix_img.GetSize()[2]], [slice[0], 0, 0])
+    mov_img_slice = sitk.Extract(mov_img, [0, mov_img.GetSize()[1], mov_img.GetSize()[2]], [slice[0], 0, 0])
+    fix_img_extent = [0,
+                      (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
+                      (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
+                       0]
+    mov_img_extent = [0,
+                      (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
+                      (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
+                      0]
+    ax[2].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
+    ax[2].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+
     plt.tight_layout()
 
 
