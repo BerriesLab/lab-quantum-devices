@@ -12,12 +12,13 @@ class BrainAligner:
         The fixed image space is described by the (i, j, k) coordinate system
         The moving image space is described by the (l, m, n) coordinate system
         """
-        # Figure and Axes objects for
+
         self.fig1, self.ax1 = self.create_figure1()
         self.fig2, self.ax2 = self.create_figure2()
 
         self.fix_img = fix_img
         self.mov_img = mov_img
+
         self.click1 = None
         self.click2 = None
 
@@ -27,8 +28,11 @@ class BrainAligner:
         # Moving image slice, initial (0), and current
         self.l0, self.m0, self.n0 = mov_img.GetSize()[0] // 2, mov_img.GetSize()[1] // 2, mov_img.GetSize()[2] // 2
         self.l, self.m, self.n = self.l0, self.m0, self.n0
-        # Delta slice for alignment
-        self.di, self.dj, self.dk = 0, 0, 0
+        # dx, dy, dz in physical space
+        self.delta = 0
+
+        # Transformation
+        self.transform = None
 
     def execute(self):
         """In the order, the function creates a figure with 3 subplots (xy, xz and yz planes). Then, plots sections of the fixed image (MR image)
@@ -41,7 +45,8 @@ class BrainAligner:
         plt.tight_layout()
         self.fig1.canvas.mpl_connect("button_press_event", self.on_click1)
         self.fig2.canvas.mpl_connect("button_press_event", self.on_click2)
-        # self.fig1.canvas.mpl_connect('key_press_event', self.on_key_return)
+        self.fig1.canvas.mpl_connect('key_press_event', self.on_key)
+        self.fig2.canvas.mpl_connect('key_press_event', self.on_key)
         plt.show(block=False)
         mplcursors.cursor(hover=True)
         plt.show()
@@ -214,16 +219,6 @@ class BrainAligner:
         self.fig1.canvas.draw()
         self.fig2.canvas.draw()
 
-    def align(self):
-        """Calculate the transformation"""
-
-        # Create a translation transform in 3D
-        translation = sitk.TranslationTransform(3)
-        offset = self.mov_img.TransformIndexToPhysicalPoint([self.di, self.dj, self.dk])
-        print(f"Offset in physical space: {offset}")
-        translation.SetOffset(offset)
-        self.mov_img = sitk.Resample(self.mov_img, translation, interpolator=sitk.sitkLinear, defaultPixelValue=self.mov_img.GetPixelIDValue())
-
     def on_close(self,):
         self.fig1.canvas.stop_event_loop()
 
@@ -264,32 +259,83 @@ class BrainAligner:
 
                     # Calculate the offset: target location - starting location
                     if self.click1[2] == self.click2[2] == "xy":
-                        self.di = int(self.click2[0] // self.mov_img.GetSpacing()[0] - self.click1[0] // self.mov_img.GetSpacing()[0])
-                        self.dj = int(-1 * (self.click2[1] // self.mov_img.GetSpacing()[1] - self.click1[1] // self.mov_img.GetSpacing()[1]))
-                        self.dk = 0
+                        i1 = int(self.click1[0] // self.mov_img.GetSpacing()[0])
+                        i2 = int(self.click2[0] // self.mov_img.GetSpacing()[0])
+                        j1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[1])
+                        j2 = int(-1 * self.click2[1] // self.mov_img.GetSpacing()[1])
+                        k1 = int(self.n)
+                        k2 = int(self.n)
 
                     if self.click1[2] == self.click2[2] == "xz":
-                        self.di = int(self.click2[0] // self.mov_img.GetSpacing()[0] - self.click1[0] // self.mov_img.GetSpacing()[0])
-                        self.dj = 0
-                        self.dk = int(-1 * (self.click2[1] // self.mov_img.GetSpacing()[2] - self.click1[1] // self.mov_img.GetSpacing()[2]))
+                        i1 = int(self.click1[0] // self.mov_img.GetSpacing()[0])
+                        i2 = int(self.click2[0] // self.mov_img.GetSpacing()[0])
+                        j1 = int(self.m)
+                        j2 = int(self.m)
+                        k1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
+                        k2 = int(-1 * self.click2[1] // self.mov_img.GetSpacing()[2])
 
                     if self.click1[2] == self.click2[2] == "yz":
-                        self.di = 0
-                        self.dj = int(self.click2[1] // self.mov_img.GetSpacing()[1] - self.click1[1] // self.mov_img.GetSpacing()[1])
-                        self.dk = int(-1 * (self.click2[1] // self.mov_img.GetSpacing()[2] - self.click1[1] // self.mov_img.GetSpacing()[2]))
+                        i1 = int(self.l)
+                        i2 = int(self.l)
+                        j1 = int(self.click1[0] // self.mov_img.GetSpacing()[1])
+                        j2 = int(self.click2[0] // self.mov_img.GetSpacing()[1])
+                        k1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
+                        k2 = int(-1 * self.click2[1] // self.mov_img.GetSpacing()[2])
 
-                    print(f"di, dj, dk: {self.di}, {self.dj}, {self.dk}")
-                    self.align()
+                    # Get coordinates in physical space
+                    xyz1 = np.array(self.mov_img.TransformIndexToPhysicalPoint([i1, j1, k1]))
+                    xyz2 = np.array(self.mov_img.TransformIndexToPhysicalPoint([i2, j2, k2]))
+
+                    # calculate transformation and update attributes and plots
+                    self.delta = xyz1 - xyz2
+                    print(f"delta: {self.delta}")
+                    translation = sitk.TranslationTransform(3)
+                    translation.SetOffset(xyz1 - xyz2)
+                    self.mov_img = sitk.Resample(self.mov_img, translation, interpolator=sitk.sitkLinear, defaultPixelValue=self.mov_img.GetPixelIDValue())
                     self.update_plot()
+                    self.update_transform(translation)
 
-                    # reset the clicks
-                    self.click1 = None
-                    self.click2 = None
                 else:
                     print("To align the brains, two clicks must occur on the same figure and axis. Resetting Clicks.")
 
-    def on_key_return(self, event):
+                # reset the clicks
+                self.click1 = None
+                self.click2 = None
+
+    def on_key(self, event):
         if event.key == "enter":
             print("Centering completed.")
             print(f"Fix image center: {self.i, self.j, self.k}")
             print(f"Mov image center: {self.l, self.m, self.n}")
+
+        if event.key == "r":
+            """Reset the image by first inverting the transformation, and then setting the central slice."""
+            print("Resetting image.")
+            inverse_transform = self.transform.GetInverse()
+            self.mov_img = sitk.Resample(self.mov_img, inverse_transform, interpolator=sitk.sitkLinear, defaultPixelValue=self.mov_img.GetPixelIDValue())
+            self.i = self.i0
+            self.j = self.j0
+            self.k = self.k0
+            self.l = self.l0
+            self.m = self.m0
+            self.n = self.n0
+            self.update_plot()
+
+        if event.key == "down":
+            print("Upscale atlas by a factor 1.1x")
+            rescale = sitk.ScaleTransform(3)
+            scale_factors = (1.5, 0.8, 2.0)
+            rescale.SetScale(scale_factors)
+            # Apply the 3D scale transform to the image
+            sitk.Resample(self.mov_img, rescale)
+
+        if event.key == "up":
+            print("Downscale atlas by a factor 0.9x")
+            rescale = sitk.ScaleTransform
+
+    def update_transform(self, transform):
+        """Update the transform attribute"""
+        if self.transform is None:
+            self.transform = transform
+        else:
+            self.transform = sitk.CompositeTransform([self.transform, transform])
