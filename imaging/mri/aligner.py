@@ -214,21 +214,15 @@ class BrainAligner:
         self.fig1.canvas.draw()
         self.fig2.canvas.draw()
 
-    def align(self,):
-        # Display moving image - xy plane - Extent order: left, right, bottom, top
-        img_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], self.mov_img.GetSize()[1], 0], [0, 0, self.mov_img_xyz[2]])
-        extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
-        self.ax1_mov_img_xy = self.ax1[0].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='jet', extent=extent, alpha=0.3)
+    def align(self):
+        """Calculate the transformation"""
 
-        # Display moving image - xz plane
-        img_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], 0, self.mov_img.GetSize()[2]], [0, self.mov_img_xyz[1], 0])
-        extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
-        self.ax1_mov_img_xz = self.ax1[1].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='jet', extent=extent, alpha=0.3)
-
-        # Display moving image - xy plane
-        img_slice = sitk.Extract(self.mov_img, [0, self.mov_img.GetSize()[1], self.mov_img.GetSize()[2]], [self.mov_img_xyz[0], 0, 0])
-        extent = [0, (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0], (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1], 0]
-        self.ax1_mov_img_yz = self.ax1[2].imshow(sitk.GetArrayViewFromImage(img_slice), cmap='jet', extent=extent, alpha=0.3)
+        # Create a translation transform in 3D
+        translation = sitk.TranslationTransform(3)
+        offset = self.mov_img.TransformIndexToPhysicalPoint([self.di, self.dj, self.dk])
+        print(f"Offset in physical space: {offset}")
+        translation.SetOffset(offset)
+        self.mov_img = sitk.Resample(self.mov_img, translation, interpolator=sitk.sitkLinear, defaultPixelValue=self.mov_img.GetPixelIDValue())
 
     def on_close(self,):
         self.fig1.canvas.stop_event_loop()
@@ -286,6 +280,7 @@ class BrainAligner:
 
                     print(f"di, dj, dk: {self.di}, {self.dj}, {self.dk}")
                     self.align()
+                    self.update_plot()
 
                     # reset the clicks
                     self.click1 = None
