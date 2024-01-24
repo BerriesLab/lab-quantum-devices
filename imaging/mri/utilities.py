@@ -103,8 +103,11 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image, registration="rigid
 
     brain_aligner = BrainAligner(fix_img, mov_img)
     brain_aligner.execute()
-    # brain_aligner.transform
+    print("brain aligner")
+    check_registration(fix_img, sitk.Resample(mov_img, brain_aligner.transform))
+    plt.show()
 
+    # brain_aligner.transform
 
     # # 6. REGISTRATION
     # elastixImageFilter = sitk.ElastixImageFilter()

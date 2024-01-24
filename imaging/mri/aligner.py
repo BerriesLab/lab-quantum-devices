@@ -220,6 +220,9 @@ class BrainAligner:
         self.fig2.canvas.draw()
 
     def on_click1(self, event):
+        """It requires one click on any axis in the 'Brain Centering' figure. Then, it calculates and plots the 
+        three slices passing through the selected pair of coordinates, and calculate the transformation required to 
+        translate either the fixed or moving image so to have the brain center in the center."""""
         self.click1 = (event.xdata, event.ydata, event.inaxes.get_label(), event.inaxes.figure.number)
         print(f'Click 1 at ({self.click1[0]}, {self.click1[1]}) on {self.click1[2]}, fig {self.click1[3]}')
 
@@ -235,12 +238,28 @@ class BrainAligner:
             self.l, self.n = int(self.click1[0]//self.mov_img.GetSpacing()[0]), int(-1 * self.click1[1]//self.mov_img.GetSpacing()[2])
         if self.click1[2] == "yz mov":
             self.m, self.n = int(self.click1[0]//self.mov_img.GetSpacing()[1]), int(-1 * self.click1[1]//self.mov_img.GetSpacing()[2])
-        self.update_plot()
 
-        # reset the clicks
+        self.update_plot()
         self.click1 = None
 
+        # Get coordinates in physical space
+        xyz1 = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k]))
+        xyz2 = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
+
+        # calculate transformation and update attributes
+        self.delta = xyz1 - xyz2
+        print(f"delta: {self.delta}")
+        translation = sitk.TranslationTransform(3)
+        translation.SetOffset(xyz1 - xyz2)
+        self.update_transform(translation)
+
     def on_click2(self, event):
+        """It requires two clicks on the same axis in the 'Brain Aligner' figure. Then, it calculates the
+        transformation required to translate rigidly the moving image with respect to the fixed image."""
+
+        # make a copy of attributes to initialize the function
+        i1, j1, k1 = int(self.l), int(self.m), int(self.n)
+        i2, j2, k2 = int(self.l), int(self.m), int(self.n)
 
         if event.inaxes:
             if self.click1 is None:
@@ -260,20 +279,20 @@ class BrainAligner:
                         i2 = int(self.click2[0] // self.mov_img.GetSpacing()[0])
                         j1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[1])
                         j2 = int(-1 * self.click2[1] // self.mov_img.GetSpacing()[1])
-                        k1 = int(self.n)
-                        k2 = int(self.n)
+                        k1 = k1
+                        k2 = k2
 
                     if self.click1[2] == self.click2[2] == "xz":
                         i1 = int(self.click1[0] // self.mov_img.GetSpacing()[0])
                         i2 = int(self.click2[0] // self.mov_img.GetSpacing()[0])
-                        j1 = int(self.m)
-                        j2 = int(self.m)
+                        j1 = j1
+                        j2 = j2
                         k1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
                         k2 = int(-1 * self.click2[1] // self.mov_img.GetSpacing()[2])
 
                     if self.click1[2] == self.click2[2] == "yz":
-                        i1 = int(self.l)
-                        i2 = int(self.l)
+                        i1 = i1
+                        i2 = i2
                         j1 = int(self.click1[0] // self.mov_img.GetSpacing()[1])
                         j2 = int(self.click2[0] // self.mov_img.GetSpacing()[1])
                         k1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
@@ -301,13 +320,12 @@ class BrainAligner:
 
     def on_key(self, event):
         if event.key == "enter":
-            print("Centering completed.")
+            print("\nCentering completed.")
             print(f"Fix image center: {self.i, self.j, self.k}")
             print(f"Mov image center: {self.l, self.m, self.n}")
-            print(f"Transform: {self.transform}")
+            print(f"Transform: {self.transform.GetParameters()}\n")
             plt.close(self.fig1)
             plt.close(self.fig2)
-            self.calculate_transform()
 
         if event.key == "r":
             """Reset the image by first inverting the transformation, and then setting the central slice."""
@@ -349,19 +367,6 @@ class BrainAligner:
             self.transform = transform
         else:
             self.transform = sitk.CompositeTransform([self.transform, transform])
-
-    def calculate_transform(self):
-        """The overall transform aligning the brain atlas to the MR image is the composition of the
-        translation ... with the translation that aligns the position of the brain centers."""
-
-        # Calculate points in physical space
-        xyz_fix_img = self.fix_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k])
-        xyz_mov_img = self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n])
-
-        # Create a translation transform based on the corresponding points
-        sitk.LandmarkBasedTransformInitializer(sitk.TranslationTransform(), xyz_fix_img, xyz_mov_img)
-
-        print("Here")
 
 
 
