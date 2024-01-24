@@ -164,55 +164,69 @@ def extract_axial_section(img: sitk.Image, n=None):
     plt.title("axial")
 
 
-def check_registration(fix_img: sitk.Image, mov_img: sitk.Image):
-    """It assumes that the """
-    slice = [int(x // 2) for x in fix_img.GetSize()]
-    fig, ax = plt.subplots(1, 3)
-    for item in ax.flatten():
-        item.set_axis_off()
+def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, n_slices=3):
+    """
+    Plot xy, xz and yz slices of fixed and moving images overlay. The selected slices are determined
+    by the list of n tuples [(i, j, k)_1, (i, j, k)_2 ... (i, j, k)_n], where the i, j, and k represent
+    the voxel indices in the image coordinate system. Since the same tuples are used to extract slices of
+    both images, and the tuples are selected on the basis of the fixed image properties,
+    the plot is ideal to display the quality of the registration.
+    """
 
-    ax[0].set_title("xy - axial")
-    fix_img_slice = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, slice[2]])
-    mov_img_slice = sitk.Extract(mov_img, [mov_img.GetSize()[0], mov_img.GetSize()[1], 0], [0, 0, slice[2]])
-    fix_img_extent = [0,
-                      (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
-                      (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
-                      0]
-    mov_img_extent = [0,
-                      (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
-                      (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
-                      0]
-    ax[0].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
-    ax[0].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+    n = np.array(fix_img.GetSize()) // (n_slices + 1)
+    t = 0
+    fig, ax = plt.subplots(n_slices, 3)
+    ax = ax.flatten()
+    for idx in np.linspace(0, n_slices + 3, 3, dtype=int):
 
-    ax[1].set_title("xz - coronal")
-    fix_img_slice = sitk.Extract(fix_img, [fix_img.GetSize()[0], 0, fix_img.GetSize()[2]], [0, slice[1], 0])
-    mov_img_slice = sitk.Extract(mov_img, [mov_img.GetSize()[0], 0, mov_img.GetSize()[2]], [0, slice[1], 0])
-    fix_img_extent = [0,
-                      (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
-                      (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
-                       0]
-    mov_img_extent = [0,
-                      (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
-                      (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
-                      0]
-    ax[1].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
-    ax[1].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+        i = int(n[0] * (t + 1))
+        j = int(n[1] * (t + 1))
+        k = int(n[2] * (t + 1))
 
-    ax[2].set_title("yz - sagittal")
-    fix_img_slice = sitk.Extract(fix_img, [0, fix_img.GetSize()[1], fix_img.GetSize()[2]], [slice[0], 0, 0])
-    mov_img_slice = sitk.Extract(mov_img, [0, mov_img.GetSize()[1], mov_img.GetSize()[2]], [slice[0], 0, 0])
-    fix_img_extent = [0,
-                      (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
-                      (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
-                       0]
-    mov_img_extent = [0,
-                      (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
-                      (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
-                      0]
-    ax[2].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
-    ax[2].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+        ax[idx + 0].set_axis_off()
+        ax[idx + 0].set_title("xy - axial") if idx == 0 else None
+        fix_img_slice = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, k])
+        mov_img_slice = sitk.Extract(mov_img, [mov_img.GetSize()[0], mov_img.GetSize()[1], 0], [0, 0, k])
+        fix_img_extent = [0,
+                          (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
+                          (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
+                          0]
+        mov_img_extent = [0,
+                          (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
+                          (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
+                          0]
+        ax[idx + 0].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
+        ax[idx + 0].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
 
+        ax[idx + 1].set_title("xz - coronal") if idx == 0 else None
+        fix_img_slice = sitk.Extract(fix_img, [fix_img.GetSize()[0], 0, fix_img.GetSize()[2]], [0, j, 0])
+        mov_img_slice = sitk.Extract(mov_img, [mov_img.GetSize()[0], 0, mov_img.GetSize()[2]], [0, j, 0])
+        fix_img_extent = [0,
+                          (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
+                          (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
+                           0]
+        mov_img_extent = [0,
+                          (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
+                          (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
+                          0]
+        ax[idx + 1].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
+        ax[idx + 1].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+
+        ax[idx + 2].set_title("yz - sagittal") if idx == 0 else None
+        fix_img_slice = sitk.Extract(fix_img, [0, fix_img.GetSize()[1], fix_img.GetSize()[2]], [i, 0, 0])
+        mov_img_slice = sitk.Extract(mov_img, [0, mov_img.GetSize()[1], mov_img.GetSize()[2]], [i, 0, 0])
+        fix_img_extent = [0,
+                          (0 + fix_img_slice.GetSize()[0]) * fix_img_slice.GetSpacing()[0],
+                          (0 - fix_img_slice.GetSize()[1]) * fix_img_slice.GetSpacing()[1],
+                          0]
+        mov_img_extent = [0,
+                          (0 + mov_img_slice.GetSize()[0]) * mov_img_slice.GetSpacing()[0],
+                          (0 - mov_img_slice.GetSize()[1]) * mov_img_slice.GetSpacing()[1],
+                          0]
+        ax[idx + 2].imshow(sitk.GetArrayFromImage(fix_img_slice), cmap='gray', extent=fix_img_extent)
+        ax[idx + 2].imshow(sitk.GetArrayFromImage(mov_img_slice), cmap='jet', alpha=0.3, extent=mov_img_extent)
+
+        t += 1
     plt.tight_layout()
 
 
