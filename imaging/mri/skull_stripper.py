@@ -1,5 +1,6 @@
 import pandas as pd
 from imaging.mri.utilities import *
+from functions import register_brain
 
 # Skull stripping is performed on T1, 1T1 and 1/2T1 MR images. To the purpose of model training,
 # save the pairs (skull, brain segment): the brain segment will be used to weight the registration and model training.
@@ -48,5 +49,6 @@ for key, grp in grouped:
     mri = read_dicom_series(path)
 
     # register atlas to mr image
-    registered = register_brain(fix_img=mri, mov_img=atlas, registration="rigid")
+    registered = register_brain(fix_img=mri, mov_img=atlas)
+
 
