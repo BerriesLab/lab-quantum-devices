@@ -47,9 +47,6 @@ class BrainAligner:
         self.delta = 0
 
         # Transformation
-        self.transform1 = None
-        self.transform2 = None
-        self.transform3 = None
         self.transform = None
 
     def execute(self):
@@ -71,6 +68,7 @@ class BrainAligner:
     def create_figure(self):
         """Create figure and axes for brain centering"""
         fig, ax = plt.subplots(3, 3)
+        plt.show(block=False)
         for idx, item in enumerate(ax.flatten()):
             item.set_axis_off()
 
@@ -170,6 +168,10 @@ class BrainAligner:
                                 0],
                         vmin=0,
                         vmax=1)
+        ax[2, 0].axhline(y=-self.fix_img.GetSize()[1] // 2 * self.fix_img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 0].axvline(x=self.fix_img.GetSize()[0] // 2 * self.fix_img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 0].axhline(y=-self.mov_img.GetSize()[1] // 2 * self.mov_img.GetSpacing()[1], color='olive', linestyle='--', linewidth=1)
+        ax[2, 0].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
 
         ax[2, 1].set_label("xz ovl")
         ax[2, 1].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[0], self.fix_img.GetSize()[2])),
@@ -188,6 +190,10 @@ class BrainAligner:
                                 0],
                         vmin=0,
                         vmax=1)
+        ax[2, 1].axhline(y=-self.fix_img.GetSize()[2] // 2 * self.fix_img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 1].axvline(x=self.fix_img.GetSize()[0] // 2 * self.fix_img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 1].axhline(y=-self.mov_img.GetSize()[2] // 2 * self.mov_img.GetSpacing()[2], color='olive', linestyle='--', linewidth=1)
+        ax[2, 1].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
 
         ax[2, 2].set_label("yz ovl")
         ax[2, 2].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[1], self.fix_img.GetSize()[2])),
@@ -206,6 +212,10 @@ class BrainAligner:
                                 0],
                         vmin=0,
                         vmax=1)
+        ax[2, 2].axhline(y=-self.fix_img.GetSize()[2] // 2 * self.fix_img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 2].axvline(x=self.fix_img.GetSize()[1] // 2 * self.fix_img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 2].axhline(y=-self.mov_img.GetSize()[2] // 2 * self.mov_img.GetSpacing()[2], color='olive', linestyle='--', linewidth=1)
+        ax[2, 2].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
 
         plt.tight_layout()
         print("Click to center the image. Press 'Return' to store the coordinates")
@@ -227,49 +237,60 @@ class BrainAligner:
         # Update fixed image - xy plane
         fix_img_xy_slice = sitk.Extract(self.fix_img, [self.fix_img.GetSize()[0], self.fix_img.GetSize()[1], 0], [0, 0, k])
         self.ax[0, 0].images[0].set_array(sitk.GetArrayFromImage(fix_img_xy_slice))
-        self.ax[0, 0].lines[0].set_data(plt.axhline(y=-j * self.fix_img.GetSpacing()[1]).get_data())
-        self.ax[0, 0].lines[1].set_data(plt.axvline(x=+i * self.fix_img.GetSpacing()[0]).get_data())
+        self.ax[0, 0].lines[0].set_ydata(-j * self.fix_img.GetSpacing()[1])
+        self.ax[0, 0].lines[1].set_xdata(+i * self.fix_img.GetSpacing()[0])
 
         # Update fixed image - xz plane
         fix_img_xz_slice = sitk.Extract(self.fix_img, [self.fix_img.GetSize()[0], 0, self.fix_img.GetSize()[2]], [0, j, 0])
         self.ax[0, 1].images[0].set_array(sitk.GetArrayFromImage(fix_img_xz_slice))
-        self.ax[0, 1].lines[0].set_data(plt.axhline(y=-k * self.fix_img.GetSpacing()[2]).get_data())
-        self.ax[0, 1].lines[1].set_data(plt.axvline(x=+i * self.fix_img.GetSpacing()[0]).get_data())
+        self.ax[0, 1].lines[0].set_ydata(-k * self.fix_img.GetSpacing()[2])
+        self.ax[0, 1].lines[1].set_xdata(+i * self.fix_img.GetSpacing()[0])
 
         # # Update fixed image - yz plane
         fix_img_yz_slice = sitk.Extract(self.fix_img, [0, self.fix_img.GetSize()[1], self.fix_img.GetSize()[2]], [i, 0, 0])
         self.ax[0, 2].images[0].set_array(sitk.GetArrayFromImage(fix_img_yz_slice))
-        self.ax[0, 2].lines[0].set_data(plt.axhline(y=-k * self.fix_img.GetSpacing()[2]).get_data())
-        self.ax[0, 2].lines[1].set_data(plt.axvline(x=+j * self.fix_img.GetSpacing()[1]).get_data())
+        self.ax[0, 2].lines[0].set_ydata(-k * self.fix_img.GetSpacing()[2])
+        self.ax[0, 2].lines[1].set_xdata(+j * self.fix_img.GetSpacing()[1])
 
         # -----------------------------------------------------------------------
         # Update moving image - xy plane
         mov_img_xy_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], self.mov_img.GetSize()[1], 0], [0, 0, n])
         self.ax[1, 0].images[0].set_array(sitk.GetArrayFromImage(mov_img_xy_slice))
-        self.ax[1, 0].lines[0].set_data(plt.axhline(y=-m * self.mov_img.GetSpacing()[1]).get_data())
-        self.ax[1, 0].lines[1].set_data(plt.axvline(x=+l * self.mov_img.GetSpacing()[0]).get_data())
+        self.ax[1, 0].lines[0].set_ydata(-m * self.mov_img.GetSpacing()[1])
+        self.ax[1, 0].lines[1].set_xdata(+l * self.mov_img.GetSpacing()[0])
 
         # Update moving image - xz plane
         mov_img_xz_slice = sitk.Extract(self.mov_img, [self.mov_img.GetSize()[0], 0, self.mov_img.GetSize()[2]], [0, m, 0])
         self.ax[1, 1].images[0].set_array(sitk.GetArrayFromImage(mov_img_xz_slice))
-        self.ax[1, 1].lines[0].set_data(plt.axhline(y=-n * self.mov_img.GetSpacing()[2]).get_data())
-        self.ax[1, 1].lines[1].set_data(plt.axvline(x=+l * self.mov_img.GetSpacing()[0]).get_data())
+        self.ax[1, 1].lines[0].set_ydata(-n * self.mov_img.GetSpacing()[2])
+        self.ax[1, 1].lines[1].set_xdata(+l * self.mov_img.GetSpacing()[0])
 
         # Update moving image - yz plane
         mov_img_yz_slice = sitk.Extract(self.mov_img, [0, self.fix_img.GetSize()[1], self.mov_img.GetSize()[2]], [l, 0, 0])
         self.ax[1, 2].images[0].set_array(sitk.GetArrayFromImage(mov_img_yz_slice))
-        self.ax[1, 2].lines[0].set_data(plt.axhline(y=-n * self.mov_img.GetSpacing()[2]).get_data())
-        self.ax[1, 2].lines[1].set_data(plt.axvline(x=+m * self.mov_img.GetSpacing()[1]).get_data())
+        self.ax[1, 2].lines[0].set_ydata(-n * self.mov_img.GetSpacing()[2])
+        self.ax[1, 2].lines[1].set_xdata(+m * self.mov_img.GetSpacing()[1])
 
         # -----------------------------------------------------------------------
         # Display fixed and moving image overlaid in Figure 2.
         self.ax[2, 0].images[0].set_array(sitk.GetArrayViewFromImage(fix_img_xy_slice))
         self.ax[2, 0].images[1].set_array(sitk.GetArrayViewFromImage(mov_img_xy_slice))
+        self.ax[2, 0].lines[0].set_ydata(-j * self.fix_img.GetSpacing()[1])
+        self.ax[2, 0].lines[1].set_xdata(+i * self.fix_img.GetSpacing()[0])
+        self.ax[2, 0].lines[2].set_ydata(-m * self.mov_img.GetSpacing()[1])
+        self.ax[2, 0].lines[3].set_xdata(+l * self.mov_img.GetSpacing()[0])
         self.ax[2, 1].images[0].set_array(sitk.GetArrayViewFromImage(fix_img_xz_slice))
         self.ax[2, 1].images[1].set_array(sitk.GetArrayViewFromImage(mov_img_xz_slice))
+        self.ax[2, 1].lines[0].set_ydata(-k * self.fix_img.GetSpacing()[2])
+        self.ax[2, 1].lines[1].set_xdata(+i * self.fix_img.GetSpacing()[0])
+        self.ax[2, 1].lines[2].set_ydata(-n * self.mov_img.GetSpacing()[2])
+        self.ax[2, 1].lines[3].set_xdata(+l * self.mov_img.GetSpacing()[0])
         self.ax[2, 2].images[0].set_array(sitk.GetArrayViewFromImage(fix_img_yz_slice))
         self.ax[2, 2].images[1].set_array(sitk.GetArrayViewFromImage(mov_img_yz_slice))
-
+        self.ax[2, 2].lines[0].set_ydata(-k * self.fix_img.GetSpacing()[2])
+        self.ax[2, 2].lines[1].set_xdata(+j * self.fix_img.GetSpacing()[1])
+        self.ax[2, 2].lines[2].set_ydata(-n * self.mov_img.GetSpacing()[2])
+        self.ax[2, 2].lines[3].set_xdata(+m * self.mov_img.GetSpacing()[1])
         self.fig.canvas.draw()
 
     def on_click(self, event):
@@ -279,7 +300,7 @@ class BrainAligner:
 
         if event.inaxes:
 
-            transform = sitk.TranslationTransform(3)
+            self.transform = sitk.TranslationTransform(3)
 
             if self.click1 is None:
 
@@ -303,7 +324,7 @@ class BrainAligner:
 
                     target = np.array(self.fix_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k]))
                     origin = np.array(self.fix_img.TransformIndexToPhysicalPoint([self.i0, self.j0, self.k0]))
-                    transform.SetOffset(target - origin)
+                    # self.transform.SetOffset(target - origin)
                     # self.fix_img = sitk.Resample(self.fix_img,
                     #                              transform=transform,
                     #                              interpolator=sitk.sitkLinear,
@@ -331,7 +352,7 @@ class BrainAligner:
 
                     target = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
                     origin = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l0, self.m0, self.n0]))
-                    transform.SetOffset(target - origin)
+                    # self.transform.SetOffset(target - origin)
                     # self.mov_img = sitk.Resample(self.mov_img,
                     #                              transform=transform,
                     #                              interpolator=sitk.sitkLinear,
@@ -356,8 +377,6 @@ class BrainAligner:
                         self.l1 = self.l
                         self.m1 = int(self.click1[0] // self.mov_img.GetSpacing()[1])
                         self.n1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
-
-                    # self.update_state_variables()
 
             elif self.click1 is not None and "ovl" in self.click1[2]:
 
@@ -387,9 +406,9 @@ class BrainAligner:
                 origin = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l1, self.m1, self.n1]))
 
                 # calculate transformation and update attributes and plots
-                transform.SetOffset(- target + origin)
+                self.transform.SetOffset(- target + origin)
                 self.mov_img = sitk.Resample(self.mov_img,
-                                             transform=transform,
+                                             transform=self.transform,
                                              interpolator=sitk.sitkLinear,
                                              defaultPixelValue=0,
                                              outputPixelType=self.mov_img.GetPixelIDValue())
@@ -400,16 +419,11 @@ class BrainAligner:
 
     def on_key(self, event):
         if event.key == "enter":
-            if self.transform1 is None:
-                self.transform1 = sitk.AffineTransform(3)
-            if self.transform2 is None:
-                self.transform2 = sitk.AffineTransform(3)
-            self.transform = sitk.CompositeTransform([self.transform1, self.transform2])
+            # self.transform = sitk.CompositeTransform([self.transform1, self.transform2])
             print("\nCentering completed.")
             print(f"Fix image center: {self.i, self.j, self.k}")
             print(f"Mov image center: {self.l, self.m, self.n}")
             print(f"Transform: {self.transform.GetParameters()}\n")
-            plt.close(self.fig)
             plt.close(self.fig)
 
         if event.key == "r":
@@ -422,19 +436,20 @@ class BrainAligner:
                                          interpolator=sitk.sitkLinear,
                                          defaultPixelValue=0,
                                          outputPixelType=self.mov_img.GetPixelIDValue())
-            self.i = self.i0
-            self.j = self.j0
-            self.k = self.k0
-            self.l = self.l0
-            self.m = self.m0
-            self.n = self.n0
-            self.update_figure()
+            # self.i = self.i0
+            # self.j = self.j0
+            # self.k = self.k0
+            # self.l = self.l0
+            # self.m = self.m0
+            # self.n = self.n0
+            self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
 
         if event.key == "up":
             print("Upscale atlas by a factor 1.1x")
             rescale = sitk.ScaleTransform(3)
             scale_factors = (0.9, 0.9, 0.9)
             rescale.SetScale(scale_factors)
+            rescale.SetCenter(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
             # Apply the 3D scale transform to the image
             self.mov_img = sitk.Resample(self.mov_img,
                                          transform=rescale,
@@ -442,13 +457,14 @@ class BrainAligner:
                                          defaultPixelValue=0,
                                          outputPixelType=self.mov_img.GetPixelIDValue())
             self.update_transform(rescale)
-            self.update_figure([self.l, self.m, self.n], [self.i, self.k, self.k])
+            self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
 
         if event.key == "down":
             print("Downscale atlas by a factor 0.9x")
             rescale = sitk.ScaleTransform(3)
             scale_factors = (1.1, 1.1, 1.1)
             rescale.SetScale(scale_factors)
+            rescale.SetCenter(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
             # Apply the 3D scale transform to the image
             self.mov_img = sitk.Resample(self.mov_img,
                                          transform=rescale,
@@ -456,7 +472,7 @@ class BrainAligner:
                                          defaultPixelValue=0,
                                          outputPixelType=self.mov_img.GetPixelIDValue())
             self.update_transform(rescale)
-            self.update_figure([self.l, self.m, self.n], [self.i, self.k, self.k])
+            self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
 
     def update_transform(self, transform):
         """Update the transform attribute"""
