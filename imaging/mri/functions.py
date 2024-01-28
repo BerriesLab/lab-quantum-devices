@@ -27,9 +27,9 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
     # 1. PROJECT ATLAS ON MR IMAGE SPACE
     # Cast the pixel data type of the moving image to the pixel data type of the fixed image
     mov_img = sitk.Cast(mov_img, fix_img.GetPixelID())
-    # Rescale the intensity of both images in the default range [0, 255].
-    fix_img = sitk.RescaleIntensity(fix_img)
-    mov_img = sitk.RescaleIntensity(mov_img)
+    # Rescale the intensity of both images in the range [0, 1].
+    fix_img = sitk.RescaleIntensity(fix_img, 0, 1)
+    mov_img = sitk.RescaleIntensity(mov_img, 0, 1)
     # Create a 3D affine transformation (this should take into account for left- and right-handed systems through plane reflexions or inversions)
     transform = sitk.AffineTransform(3)
     # Set the rotation matrix
