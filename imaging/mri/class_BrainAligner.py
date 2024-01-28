@@ -31,20 +31,22 @@ class BrainAligner:
         self.m0 = mov_img.GetSize()[1] // 2
         self.n0 = mov_img.GetSize()[2] // 2
 
-        # current and previous (_) slice index
-        self.i = self.i_ = self.i0
-        self.j = self.j_ = self.j0
-        self.k = self.k_ = self.k0
-        self.l = self.l_ = self.l0
-        self.m = self.m_ = self.m0
-        self.n = self.n_ = self.n0
+        # current and previous_ slice index
+        self.i = self.i0
+        self.j = self.j0
+        self.k = self.k0
+        self.l = self.l0
+        self.m = self.m0
+        self.n = self.n0
 
-        # indexes for alignment purposes
-        self.l1, self.m1, self.n1 = 0, 0, 0
-        self.l2, self.m2, self.n2 = 0, 0, 0
-
-        # dx, dy, dz in physical space
-        self.delta = 0
+        # delta for alignment
+        self.delta_ijk = 0
+        self.delta_lmn = 0
+        # Note for the calculation of teh final transformation
+        # lmn1 = lmn0 + delta_lmn
+        # ijk1 = ijk0 + delta_ijk
+        # lmn1 - ijk1 = (lmn0 + delta_lmn)- (ijk0 + delta_ijk) = delta_lmn - delta_ijk
+        # since lmn0 = ijk0
 
         # Transformation
         self.transform = None
@@ -294,132 +296,70 @@ class BrainAligner:
         self.fig.canvas.draw()
 
     def on_click(self, event):
-        """It requires one click on any axis in the 'Brain Centering' figure. Then, it calculates and plots the 
-        three slices passing through the selected pair of coordinates, and calculate the transformation required to 
-        translate either the fixed or moving image so to have the brain center in the center."""""
+        """
+        Left click -> set center
+        Right click -> align centers
+        """""
 
         if event.inaxes:
 
-            self.transform = sitk.TranslationTransform(3)
+            # Left click
+            if event.button == 1:
 
-            if self.click1 is None:
+                print(f'Click at ({event.xdata}, {event.ydata}) on {event.inaxes.get_label()}')
 
-                self.click1 = (event.xdata, event.ydata, event.inaxes.get_label(), event.inaxes.figure.number)
-                print(f'Click 1 at ({self.click1[0]}, {self.click1[1]}) on {self.click1[2]}, fig {self.click1[3]}')
+                if event.inaxes.get_label() == "xy fix":
+                    self.i = int(event.xdata // self.fix_img.GetSpacing()[0])
+                    self.j = int(-1 * event.ydata // self.fix_img.GetSpacing()[1])
+                elif event.inaxes.get_label() == "xz fix":
+                    self.i = int(event.xdata // self.fix_img.GetSpacing()[0])
+                    self.k = int(-1 * event.ydata // self.fix_img.GetSpacing()[2])
+                elif event.inaxes.get_label() == "yz fix":
+                    self.j = int(event.xdata // self.fix_img.GetSpacing()[1])
+                    self.k = int(-1 * event.ydata // self.fix_img.GetSpacing()[2])
 
-                if "fix" in self.click1[2]:
+                elif event.inaxes.get_label() == "xy mov":
+                    self.l = int(event.xdata // self.mov_img.GetSpacing()[0])
+                    self.m = int(-1 * event.ydata // self.mov_img.GetSpacing()[1])
+                elif event.inaxes.get_label() == "xz mov":
+                    self.l = int(event.xdata // self.mov_img.GetSpacing()[0])
+                    self.n = int(-1 * event.ydata // self.mov_img.GetSpacing()[2])
+                elif event.inaxes.get_label() == "yz mov":
+                    self.m = int(event.xdata // self.mov_img.GetSpacing()[1])
+                    self.n = int(-1 * event.ydata // self.mov_img.GetSpacing()[2])
 
-                    if self.click1[2] == "xy fix":
-                        self.i = int(self.click1[0] // self.fix_img.GetSpacing()[0])
-                        self.j = int(-1 * self.click1[1] // self.fix_img.GetSpacing()[1])
-                        self.k = self.k_
-                    if self.click1[2] == "xz fix":
-                        self.i = int(self.click1[0] // self.fix_img.GetSpacing()[0])
-                        self.j = self.j_
-                        self.k = int(-1 * self.click1[1] // self.fix_img.GetSpacing()[2])
-                    if self.click1[2] == "yz fix":
-                        self.i = self.i_
-                        self.j = int(self.click1[0] // self.fix_img.GetSpacing()[1])
-                        self.k = int(-1 * self.click1[1] // self.fix_img.GetSpacing()[2])
+                self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
 
-                    target = np.array(self.fix_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k]))
-                    origin = np.array(self.fix_img.TransformIndexToPhysicalPoint([self.i0, self.j0, self.k0]))
-                    # self.transform.SetOffset(target - origin)
-                    # self.fix_img = sitk.Resample(self.fix_img,
-                    #                              transform=transform,
-                    #                              interpolator=sitk.sitkLinear,
-                    #                              defaultPixelValue=0,
-                    #                              outputPixelType=self.fix_img.GetPixelIDValue())
-                    self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
-                    self.update_state_variables()
-                    self.click1 = None
-                    self.click2 = None
+            # Right click
+            elif event.button == 3:
 
-                elif "mov" in self.click1[2]:
-
-                    if self.click1[2] == "xy mov":
-                        self.l = int(self.click1[0] // self.mov_img.GetSpacing()[0])
-                        self.m = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[1])
-                        self.n = self.n_
-                    if self.click1[2] == "xz mov":
-                        self.l = int(self.click1[0] // self.mov_img.GetSpacing()[0])
-                        self.m = self.m_
-                        self.n = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
-                    if self.click1[2] == "yz mov":
-                        self.l = self.l_
-                        self.m = int(self.click1[0] // self.mov_img.GetSpacing()[1])
-                        self.n = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
-
-                    target = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
-                    origin = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l0, self.m0, self.n0]))
-                    # self.transform.SetOffset(target - origin)
-                    # self.mov_img = sitk.Resample(self.mov_img,
-                    #                              transform=transform,
-                    #                              interpolator=sitk.sitkLinear,
-                    #                              defaultPixelValue=0,
-                    #                              outputPixelType=self.mov_img.GetPixelIDValue())
-                    self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
-                    self.update_state_variables()
-                    self.click1 = None
-                    self.click2 = None
-
-                elif "ovl" in self.click1[2]:
-
-                    if self.click1[2] == "xy ovl":
-                        self.l1 = int(self.click1[0] // self.mov_img.GetSpacing()[0])
-                        self.m1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[1])
-                        self.n1 = self.n
-                    if self.click1[2] == "xz ovl":
-                        self.l1 = int(self.click1[0] // self.mov_img.GetSpacing()[0])
-                        self.m1 = self.m
-                        self.n1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
-                    if self.click1[2] == "yz ovl":
-                        self.l1 = self.l
-                        self.m1 = int(self.click1[0] // self.mov_img.GetSpacing()[1])
-                        self.n1 = int(-1 * self.click1[1] // self.mov_img.GetSpacing()[2])
-
-            elif self.click1 is not None and "ovl" in self.click1[2]:
-
-                self.click2 = (event.xdata, event.ydata, event.inaxes.get_label(), event.inaxes.figure.number)
-                print(f'Click 2 at ({self.click2[0]}, {self.click2[1]}) on {self.click2[2]} on fig {self.click2[3]}')
-
-                if self.click2[2] == self.click1[2] == "xy ovl":
-                    self.l2 = int(self.click2[0] // self.fix_img.GetSpacing()[0])
-                    self.m2 = int(-1 * self.click2[1] // self.fix_img.GetSpacing()[1])
-                    self.n2 = self.n1
-                elif self.click2[2] == self.click1[2] == "xz ovl":
-                    self.l2 = int(self.click2[0] // self.mov_img.GetSpacing()[0])
-                    self.m2 = self.m1
-                    self.n2 = int(-1 * self.click2[1] // self.mov_img.GetSpacing()[2])
-                elif self.click2[2] == self.click2[2] == "yz ovl":
-                    self.l2 = self.l1
-                    self.m2 = int(self.click2[0] // self.mov_img.GetSpacing()[1])
-                    self.n2 = int(-1 * self.click2[1] // self.mov_img.GetSpacing()[2])
-                else:
-                    print("Second click must be on same axis. Resetting click.")
-                    self.click1 = None
-                    self.click2 = None
+                print("Aligning images")
 
                 # Get coordinates in physical space
-                print(self.l1, self.l2, self.m1, self.m2, self.n1, self.n2)
-                target = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l2, self.m2, self.n2]))
-                origin = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l1, self.m1, self.n1]))
+                target = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k]))
+                origin = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
 
-                # calculate transformation and update attributes and plots
-                self.transform.SetOffset(- target + origin)
+                # calculate transformation
+                self.transform = sitk.TranslationTransform(3)
+                self.transform.SetOffset(-(target - origin))
                 self.mov_img = sitk.Resample(self.mov_img,
                                              transform=self.transform,
                                              interpolator=sitk.sitkLinear,
                                              defaultPixelValue=0,
                                              outputPixelType=self.mov_img.GetPixelIDValue())
+
+                self.delta_lmn = self.mov_img.TransformIndexToPhysicalPoint([self.l - self.l0, self.m - self.m0, self.n - self.n0])
+                self.delta_ijk = self.mov_img.TransformIndexToPhysicalPoint([self.i - self.i0, self.j - self.j0, self.k - self.k0])
+                self.transform.SetOffset([y - x for (x, y) in zip(self.delta_ijk, self.delta_lmn)])
+
+                self.l = self.i
+                self.m = self.j
+                self.n = self.k
                 self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
-                self.update_state_variables()
                 self.click1 = None
-                self.click2 = None
 
     def on_key(self, event):
         if event.key == "enter":
-            # self.transform = sitk.CompositeTransform([self.transform1, self.transform2])
             print("\nCentering completed.")
             print(f"Fix image center: {self.i, self.j, self.k}")
             print(f"Mov image center: {self.l, self.m, self.n}")
@@ -481,14 +421,11 @@ class BrainAligner:
         else:
             self.transform = sitk.CompositeTransform([self.transform, transform])
 
-    def update_state_variables(self):
-        self.i_ = self.i
-        self.j_ = self.j
-        self.k_ = self.k
-        self.l_ = self.l
-        self.m_ = self.m
-        self.n_ = self.n
-
-
-
+    # def update_slice_index(self):
+    #     self.i = self.i_
+    #     self.j = self.j_
+    #     self.k = self.k_
+    #     self.l = self.l_
+    #     self.m = self.m_
+    #     self.n = self.n_
 

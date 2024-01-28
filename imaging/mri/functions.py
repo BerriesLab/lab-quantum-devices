@@ -30,7 +30,9 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
     # Rescale the intensity of both images in the range [0, 1].
     fix_img = sitk.RescaleIntensity(fix_img, 0, 1)
     mov_img = sitk.RescaleIntensity(mov_img, 0, 1)
-    # Create a 3D affine transformation (this should take into account for left- and right-handed systems through plane reflexions or inversions)
+
+    # Create a 3D affine transformation (this takes into account for left- and right-handed systems through plane reflexions or inversions
+    # and align the image coordinate system origins)
     transform = sitk.AffineTransform(3)
     # Set the rotation matrix
     fix_img_direction_cosines = np.array(fix_img.GetDirection()).reshape((3, 3))
@@ -49,23 +51,31 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
 
     # 2. MATCH INTENSITY HISTOGRAMS
     mov_img = sitk.HistogramMatching(image=mov_img, referenceImage=fix_img)
-    check_registration(fix_img, mov_img)
-    plt.show()
+    #check_registration(fix_img, mov_img)
+    #plt.show()
 
     # 3. ALIGN ATLAS TO MR IMAGE
     brain_aligner = BrainAligner(fix_img, mov_img)
     brain_aligner.execute()
-    check_registration(fix_img, sitk.Resample(mov_img, brain_aligner.transform))
+    check_registration(fix_img=fix_img,
+                       mov_img=sitk.Resample(mov_img, brain_aligner.transform),
+                       slice=[brain_aligner.i, brain_aligner.j, brain_aligner.k],
+                       delta_slice=[10, 10, 10],
+                       n_slice=3)
     plt.show()
 
     # 4. REGISTRATION
     elastixImageFilter = sitk.ElastixImageFilter()
     elastixImageFilter.SetFixedImage(fix_img)
-    elastixImageFilter.SetMovingImage(mov_img)
+    elastixImageFilter.SetMovingImage(sitk.Resample(mov_img, brain_aligner.transform))
     elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
     elastixImageFilter.Execute()
     mov_img = elastixImageFilter.GetResultImage()
-    check_registration(fix_img, mov_img)
+    check_registration(fix_img=fix_img,
+                       mov_img=mov_img,
+                       slice=[brain_aligner.i, brain_aligner.j, brain_aligner.k],
+                       delta_slice=[10, 10, 10],
+                       n_slice=3)
     plt.show()
 
     # fix_img_slice_xy = sitk.Extract(fix_img, [fix_img.GetSize()[0], fix_img.GetSize()[1], 0], [0, 0, 50])
@@ -77,7 +87,7 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
     return
 
 
-def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, n_slices=3):
+def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, slice, delta_slice, n_slice):
     """
     Plot xy, xz and yz slices of fixed and moving images overlay. The selected slices are determined
     by the list of n tuples [(i, j, k)_1, (i, j, k)_2 ... (i, j, k)_n], where the i, j, and k represent
@@ -86,14 +96,19 @@ def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, n_slices=3):
     the plot is ideal to display the quality of the registration.
     """
 
-    n = np.array(fix_img.GetSize()) // (n_slices + 1)
-    fig, ax = plt.subplots(n_slices, 3)
-    ax = ax.flatten()
-    for t, idx in enumerate(np.linspace(0, n_slices + 3, 3, dtype=int)):
+    # Calculate initial slice
+    i0 = slice[0] - (delta_slice[0] * n_slice) // 2
+    j0 = slice[1] - (delta_slice[1] * n_slice) // 2
+    k0 = slice[2] - (delta_slice[2] * n_slice) // 2
 
-        i = int(n[0] * (t + 1))
-        j = int(n[1] * (t + 1))
-        k = int(n[2] * (t + 1))
+    fig, ax = plt.subplots(n_slice, 3)
+    ax = ax.flatten()
+    for t, idx in enumerate(np.linspace(0, n_slice + 3, 3, dtype=int)):
+
+        i = int(i0 + delta_slice[0] * idx)
+        j = int(j0 + delta_slice[0] * idx)
+        k = int(k0 + delta_slice[0] * idx)
+        print(i, j, k)
 
         ax[idx + 0].set_axis_off()
         ax[idx + 0].set_title("xy - axial") if idx == 0 else None

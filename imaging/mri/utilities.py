@@ -130,11 +130,11 @@ def mark_slice(img: sitk.Image, n0, n, dn, direction="axial"):
 # Create a custom colormap with 0 mapped to fully transparent
 def custom_colormap():
     # Create a custom colormap based on "jet"
-    cmap_jet = plt.colormaps.get_cmap("jet")
+    cmap_jet = plt.colormaps.get_cmap("afmhot")
     n = 256  # Number of values in the colormap
     jet_colors = cmap_jet(np.linspace(0, 1, n))
     # Set alpha channel to 0 where the value is 0
-    jet_colors[:, 3] = np.where(np.linspace(0, 1, n) == 0, 0, 0.5)
+    jet_colors[:, 3] = np.where(np.linspace(0, 1, n) == 0, 0, 0.4)
 
     return LinearSegmentedColormap.from_list("custom_jet", jet_colors, n)
 
