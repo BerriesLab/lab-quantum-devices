@@ -42,7 +42,7 @@ class BrainAligner:
         # delta for alignment
         self.delta_ijk = 0
         self.delta_lmn = 0
-        # Note for the calculation of teh final transformation
+        # Note for the calculation of the final transformation
         # lmn1 = lmn0 + delta_lmn
         # ijk1 = ijk0 + delta_ijk
         # lmn1 - ijk1 = (lmn0 + delta_lmn)- (ijk0 + delta_ijk) = delta_lmn - delta_ijk
@@ -52,15 +52,20 @@ class BrainAligner:
         self.transform = None
 
     def execute(self):
-        """In the order, the function creates a figure with 3 subplots (xy, xz and yz planes). Then, plots sections of the fixed image (MR image)
-        and lets the user find the brain center by clicking on the MR sections. For example, the user can find the center on the z-axis by
-        clicking on the xz sections. This automatically acquires the x and y coordinates, and set them as the new origin. Then, it updates the plots
-        with the sections passing through the new coordinates. The centering continues until the user is satisfied with their selection of
-        coordinates and press "Return". Then the functions plots an"""
+        """The function creates a figure with xy, xz and yz slices of the MR image (fixed image), the brain atlas (moving image) and their
+        overlay. First, the user is asked to mark the center of the brain, in the MR image and the atlas, by left-click. Then, the user can translate
+        the brain atlas by rigth-click, so that the marked centers coincide. By pressing the up and down keys, the user can rescale the size of the
+        brain atlas. By pressing return, the user accepts the alignment and the final transformation, which takes into account for both the
+        selection of the image centers, and the translation of the brain atlas, is stored as attribute and the image closed.
+        Note: this is the only solution that keeps the fixed image in its starting position."""
         # plot slices passing through the image volume center
         self.create_figure()
         self.update_figure(np.array(self.fix_img.GetSize(), dtype=int) // 2,
                            np.array(self.mov_img.GetSize(), dtype=int) // 2)
+        print("Left-click to mark images center.\n"
+              "Right-click to align.\n"
+              "Press Up/Down keys to up/down-scale brian atlas.\n"
+              "Press Return to accept and store transformation.\n")
         self.fig.canvas.mpl_connect("button_press_event", self.on_click)
         self.fig.canvas.mpl_connect('key_press_event', self.on_key)
         plt.show(block=False)
@@ -220,7 +225,6 @@ class BrainAligner:
         ax[2, 2].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
 
         plt.tight_layout()
-        print("Click to center the image. Press 'Return' to store the coordinates")
         self.fig = fig
         self.ax = ax
 
@@ -352,6 +356,8 @@ class BrainAligner:
                 self.delta_ijk = self.mov_img.TransformIndexToPhysicalPoint([self.i - self.i0, self.j - self.j0, self.k - self.k0])
                 self.transform.SetOffset([y - x for (x, y) in zip(self.delta_ijk, self.delta_lmn)])
 
+                # After translation, the centers of the moving images coincides with the center of the fixed image.
+                # Therefore, the slices of the moving image to show are now passing through the new center (l,m,n) = (i,j,k).
                 self.l = self.i
                 self.m = self.j
                 self.n = self.k
@@ -376,12 +382,12 @@ class BrainAligner:
                                          interpolator=sitk.sitkLinear,
                                          defaultPixelValue=0,
                                          outputPixelType=self.mov_img.GetPixelIDValue())
-            # self.i = self.i0
-            # self.j = self.j0
-            # self.k = self.k0
-            # self.l = self.l0
-            # self.m = self.m0
-            # self.n = self.n0
+            self.i = self.i0
+            self.j = self.j0
+            self.k = self.k0
+            self.l = self.l0
+            self.m = self.m0
+            self.n = self.n0
             self.update_figure([self.i, self.j, self.k], [self.l, self.m, self.n])
 
         if event.key == "up":

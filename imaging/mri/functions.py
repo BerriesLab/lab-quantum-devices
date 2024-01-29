@@ -29,7 +29,8 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
     mov_img = sitk.Cast(mov_img, fix_img.GetPixelID())
     # Rescale the intensity of both images in the range [0, 1].
     fix_img = sitk.RescaleIntensity(fix_img, 0, 1)
-    mov_img = sitk.RescaleIntensity(mov_img, 0, 1)
+    mov_img = sitk.RescaleIntensity(mov_img, 0, 1
+                                    )
 
     # Create a 3D affine transformation (this takes into account for left- and right-handed systems through plane reflexions or inversions
     # and align the image coordinate system origins)
@@ -57,18 +58,40 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
     # 3. ALIGN ATLAS TO MR IMAGE
     brain_aligner = BrainAligner(fix_img, mov_img)
     brain_aligner.execute()
+    # Resample the moving image
+    mov_img = sitk.Resample(mov_img, brain_aligner.transform)
     check_registration(fix_img=fix_img,
-                       mov_img=sitk.Resample(mov_img, brain_aligner.transform),
+                       mov_img=mov_img,
                        slice=[brain_aligner.i, brain_aligner.j, brain_aligner.k],
                        delta_slice=[10, 10, 10],
                        n_slice=3)
     plt.show()
 
     # 4. REGISTRATION
+    # Run first a rigid registration - This step may be unnecessary, depending on the goodness of the user-input alignment.
     elastixImageFilter = sitk.ElastixImageFilter()
     elastixImageFilter.SetFixedImage(fix_img)
-    elastixImageFilter.SetMovingImage(sitk.Resample(mov_img, brain_aligner.transform))
+    elastixImageFilter.SetMovingImage(mov_img)
     elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
+    elastixImageFilter.Execute()
+    mov_img = elastixImageFilter.GetResultImage()
+    check_registration(fix_img=fix_img,
+                       mov_img=mov_img,
+                       slice=[brain_aligner.i, brain_aligner.j, brain_aligner.k],
+                       delta_slice=[10, 10, 10],
+                       n_slice=3)
+    plt.show()
+
+    # Run an elastic registration, limiting the volume to a certain percentage of the initial brain atlas volume.
+    # Find the bounding box of the brain atlas segmentation, and use an upscaled version of it to define the volume of the fix image
+    # available for registration.
+    binary_mask = sitk.BinaryThreshold(mov_img, lowerThreshold=0)
+    bounding_box = sitk.RegionOfInterest(binary_mask, binary_mask.GetBoundingBox(label=0))
+
+    elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("bspline"))
+    # Add custom constraint to limit volume change
+    #parameter_map["MaximumNumberOfIterations"] = ["200"]
+    #parameter_map["GridSpacingSchedule"] = ["8", "6", "4"]
     elastixImageFilter.Execute()
     mov_img = elastixImageFilter.GetResultImage()
     check_registration(fix_img=fix_img,
