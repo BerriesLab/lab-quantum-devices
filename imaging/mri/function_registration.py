@@ -6,41 +6,35 @@ from utilities import custom_colormap
 
 
 def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
-    """ This function registers a brain atlas (moving image) to an MR image (fixed image).
-    To facilitate the registration, the function consists in the following steps:
-    1. Resample the moving image to the fixed image by 3D affine transformation. This allows to match the spacings,
-    the origins and to align the direction cosines of the moving image to the fixed image.
+    """
+    This function registers a brain atlas (moving image) to an MR image (fixed image).It consists in the following steps:
+
+    1. Rescale intensity of fixed and moving image in the range [0, 1], and resample the moving image to the fixed image
+    with a 3D affine transformation. The resulting moving image has same spacings, origin and direction cosines as the fixed image,
+    i.e. the fixed and moving image now share the same space.
+
     2. Match the intensity histogram of the moving image to the intensity histogram of the fixed image. This is
-    necessary to make the image intensities consistent.
-    3. Initialize the registration by preliminary placing the brain atlas (moving image) in the center of the
-    MR image's brain (fixed image). To this purpose, first the MR image is segmented with the Felzenszwalb algorithm.
-    To this purpose, we assume that the MR image is centered, such that the brain is approximately in the center
-    of the image. Therefore, we segment a 2D axial slice of the MR in the center. We select the region corresponding
-    to the brain as the one whose centroid is closest to a reference point, assigned to each anatomical plane
-    (sagittal, dorsal and transverse), and representing the average brain’s position.
-    ??? This reference point is selected by the user by left-click on the sagittal, dorsal and transverse section of the MR image.???
-    4. Registration - Rigid. To reduce computational time and help the registration procedure to focus on the brain region, we
-    applied a mask to the fixed target image. The mask is chosen to correspond to the atlas brain mask,
-    dilated with a 3D ball structuring element of radius 10 pixels.
+    necessary to make the image intensities comparable.
+
+    3. Initialize the registration by (i) aligning the brain atlas center with the MR image brain center, and (ii) rescaling the brain atlas
+    to match approximately the brain in the MR image.
+
+    4. Rigid registration. Register the brain atlas with a rigid transformation. A mask is usd to limit the region available for registration.
+    The mask is defined as the atlas brain mask dilated with a 3D ball structuring element of radius 10 mm.
+
     5 Registration - Elastic."""
 
-    # 1. PROJECT ATLAS ON MR IMAGE SPACE
-    # Cast the pixel data type of the moving image to the pixel data type of the fixed image
+    # 1.
     mov_img = sitk.Cast(mov_img, fix_img.GetPixelID())
-    # Rescale the intensity of both images in the range [0, 1].
     fix_img = sitk.RescaleIntensity(fix_img, 0, 1)
-    mov_img = sitk.RescaleIntensity(mov_img, 0, 1
-                                    )
+    mov_img = sitk.RescaleIntensity(mov_img, 0, 1)
 
-    # Create a 3D affine transformation (this takes into account for left- and right-handed systems through plane reflexions or inversions
-    # and align the image coordinate system origins)
+    # 2.
     transform = sitk.AffineTransform(3)
-    # Set the rotation matrix
     fix_img_direction_cosines = np.array(fix_img.GetDirection()).reshape((3, 3))
     mov_img_direction_cosines = np.array(mov_img.GetDirection()).reshape((3, 3))
     rotation_matrix = np.dot(mov_img_direction_cosines, np.linalg.inv(fix_img_direction_cosines))
     transform.SetMatrix(rotation_matrix.flatten())
-    # resample the moving image (the brain atlas) to fit the fixed image (MR image) space
     mov_img = sitk.Resample(image1=mov_img,
                             referenceImage=fix_img,
                             transform=transform,
@@ -48,17 +42,19 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
                             defaultPixelValue=0,
                             outputPixelType=mov_img.GetPixelIDValue()
                             )
-    # sitk.WriteImage(mov_img, "E:/2021_local_data/2023_Gd_synthesis/atlas/canine transformed.nii.gz")
+    sitk.WriteImage(fix_img, "E:/2021_local_data/2023_Gd_synthesis/tests/fix img.nii.gz")
+    sitk.WriteImage(mov_img, "E:/2021_local_data/2023_Gd_synthesis/tests/mov img.nii.gz")
 
-    # 2. MATCH INTENSITY HISTOGRAMS
+    # 3.
     mov_img = sitk.HistogramMatching(image=mov_img, referenceImage=fix_img)
     #check_registration(fix_img, mov_img)
     #plt.show()
+    sitk.WriteImage(fix_img, "E:/2021_local_data/2023_Gd_synthesis/tests/fix img.nii.gz")
+    sitk.WriteImage(mov_img, "E:/2021_local_data/2023_Gd_synthesis/tests/mov img.nii.gz")
 
-    # 3. ALIGN ATLAS TO MR IMAGE
+    # 4.
     brain_aligner = BrainAligner(fix_img, mov_img)
     brain_aligner.execute()
-    # Resample the moving image
     mov_img = sitk.Resample(mov_img, brain_aligner.transform)
     check_registration(fix_img=fix_img,
                        mov_img=mov_img,
@@ -66,13 +62,17 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
                        delta_slice=[10, 10, 10],
                        n_slice=3)
     plt.show()
+    sitk.WriteImage(fix_img, "E:/2021_local_data/2023_Gd_synthesis/tests/fix img.nii.gz")
+    sitk.WriteImage(mov_img, "E:/2021_local_data/2023_Gd_synthesis/tests/mov img.nii.gz")
 
     # 4. REGISTRATION
     # Run first a rigid registration - This step may be unnecessary, depending on the goodness of the user-input alignment.
+    mask = sitk.BinaryThreshold(mov_img, lowerThreshold=0.001, insideValue=1)
     elastixImageFilter = sitk.ElastixImageFilter()
     elastixImageFilter.SetFixedImage(fix_img)
     elastixImageFilter.SetMovingImage(mov_img)
     elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
+    elastixImageFilter.SetFixedMask(mask)
     elastixImageFilter.Execute()
     mov_img = elastixImageFilter.GetResultImage()
     check_registration(fix_img=fix_img,
@@ -85,8 +85,13 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
     # Run an elastic registration, limiting the volume to a certain percentage of the initial brain atlas volume.
     # Find the bounding box of the brain atlas segmentation, and use an upscaled version of it to define the volume of the fix image
     # available for registration.
-    binary_mask = sitk.BinaryThreshold(mov_img, lowerThreshold=0)
-    bounding_box = sitk.RegionOfInterest(binary_mask, binary_mask.GetBoundingBox(label=0))
+    binary_mask = sitk.BinaryThreshold(mov_img, lowerThreshold=0.001, insideValue=1)
+    stats_filter = sitk.LabelStatisticsImageFilter()
+    stats_filter.Execute(binary_mask, binary_mask)
+    bounding_boxes = stats_filter.GetBoundingBox(label=1)
+
+
+    #bounding_box = sitk.RegionOfInterest(binary_mask, binary_mask.GetBoundingBox(label=0))
 
     elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("bspline"))
     # Add custom constraint to limit volume change

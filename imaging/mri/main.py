@@ -1,16 +1,14 @@
 import pandas as pd
 from imaging.mri.utilities import *
-from functions import register_brain
+from function_registration import register_brain
 
 # Skull stripping is performed on T1, 1T1 and 1/2T1 MR images. To the purpose of model training,
 # save the pairs (skull, brain segment): the brain segment will be used to weight the registration and model training.
 
-# load canine brain atlas
+# Load data (brain atlas, database...)
 # atlas = sitk.ReadImage("/Users/berri/Medical Imaging/mri/brain atlas/canine.nii.gz")
-atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Johnson et al 2019 Canine Atlas v2/Canine_population_template.nii.gz")
-
-# load database
 # df = pd.read_csv("/Users/berri/Medical Imaging/mri/database.csv", sep=";", index_col=False)
+atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Johnson et al 2019 Canine Atlas v2/Canine_population_template.nii.gz")
 df = pd.read_csv("E:/2021_local_data/2023_Gd_synthesis/DICOM/database.csv", sep=";", index_col=False)
 
 # filter DataFrame

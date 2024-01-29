@@ -49,9 +49,6 @@ def read_dicom_series(path_dicom_series):
     return image
 
 
-
-
-
 def extract_sagittal_section(img: sitk.Image, n=None):
     """It assumes a 3D image"""
     size = img.GetSize()
@@ -137,4 +134,5 @@ def custom_colormap():
     jet_colors[:, 3] = np.where(np.linspace(0, 1, n) == 0, 0, 0.4)
 
     return LinearSegmentedColormap.from_list("custom_jet", jet_colors, n)
+
 
