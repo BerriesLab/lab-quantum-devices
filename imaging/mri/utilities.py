@@ -82,49 +82,6 @@ def extract_sagittal_section(ax: plt.Axes, img: sitk.Image, n, cmap):
     ax.set_axis_off()
 
 
-
-
-
-
-
-
-# Function to display slices and allow user to mark a point
-def mark_slice(img: sitk.Image, n0, n, dn, direction="axial"):
-    """Plot a number n of slices, separated by dn slices, where the central slice is centered on
-    slice number n0. If you want to have n0 in the center of the image, this must be calculated. The
-    slice can be:
-    - axial: xy plane or separating superior (head) from inferior (feet),
-    - coronal: xz plan or separating anterior (front) from posterior (back)
-    - sagittal: yz plane or separating left from right"""
-
-    plt.ion()
-    fig, axes = plt.subplots(int(np.ceil(n / 5)), 5)
-    axes = axes.flatten()
-
-    for i in range(n):
-        slice_num = n0 - (n // 2) * dn + i * dn
-        if direction == "axial":
-            img_slice = sitk.Extract(img, [img.GetSize()[0], img.GetSize()[1], 0], [0, 0, slice_num])
-            axes[i].imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', aspect=img.GetSpacing()[1] / img.GetSpacing()[0])
-        if direction == "coronal":
-            img_slice = sitk.Extract(img, [img.GetSize()[0], 0,  img.GetSize()[2]], [0, slice_num, 0])
-            axes[i].imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', aspect=img.GetSpacing()[2] / img.GetSpacing()[0])
-        if direction == "sagittal":
-            img_slice = sitk.Extract(img, [0, img.GetSize()[1], img.GetSize()[2]], [slice_num, 0, 0])
-            axes[i].imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', aspect=img.GetSpacing()[2] / img.GetSpacing()[1])
-        axes[i].set_title(f'Slice {slice_num}')
-        axes[i].set_axis_off()
-    plt.tight_layout()
-    plt.show()
-
-    point = plt.ginput(1, timeout=0, show_clicks=True)[0]
-    plt.ioff()
-    plt.close()
-
-    return point
-
-
-# Create a custom colormap with 0 mapped to fully transparent
 def custom_colormap():
     # Create a custom colormap based on "jet"
     cmap_jet = plt.colormaps.get_cmap("afmhot")
@@ -141,3 +98,46 @@ def custom_colormap_for_mask():
     # Create a ListedColormap
     custom_cmap = ListedColormap(colors)
     return custom_cmap
+
+
+def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, mask: sitk.Image or None, slice, delta_slice, n_slice):
+    """
+    Plot xy, xz and yz slices of fixed and moving images overlay. The selected slices are determined
+    by the list of n tuples [(i, j, k)_1, (i, j, k)_2 ... (i, j, k)_n], where the i, j, and k represent
+    the voxel indices in the image coordinate system. Since the same tuples are used to extract slices of
+    both images, and the tuples are selected on the basis of the fixed image properties,
+    the plot is ideal to display the quality of the registration.
+    """
+
+    # Calculate initial slice
+    i0 = slice[0] - (delta_slice[0] * n_slice) // 2
+    j0 = slice[1] - (delta_slice[1] * n_slice) // 2
+    k0 = slice[2] - (delta_slice[2] * n_slice) // 2
+
+    fig, ax = plt.subplots(n_slice, 3)
+    ax = ax.flatten()
+    for t, idx in enumerate(np.linspace(0, n_slice + 3, 3, dtype=int)):
+
+        i = int(i0 + delta_slice[0] * idx)
+        j = int(j0 + delta_slice[0] * idx)
+        k = int(k0 + delta_slice[0] * idx)
+
+        ax[idx + 0].set_title("xy - axial") if idx == 0 else None
+        extract_axial_section(ax[idx + 0], fix_img, k, "gray")
+        extract_axial_section(ax[idx + 0], mov_img, k, custom_colormap())
+        extract_axial_section(ax[idx + 0], mask, k, custom_colormap_for_mask()) if isinstance(mask, sitk.Image) else None
+
+        ax[idx + 1].set_title("xz - coronal") if idx == 0 else None
+        extract_coronal_section(ax[idx + 1], fix_img, j, "gray")
+        extract_coronal_section(ax[idx + 1], mov_img, j, custom_colormap())
+        extract_coronal_section(ax[idx + 1], mask, j, custom_colormap_for_mask()) if isinstance(mask, sitk.Image) else None
+
+        ax[idx + 2].set_title("yz - sagittal") if idx == 0 else None
+        extract_sagittal_section(ax[idx + 2], fix_img, i, "gray")
+        extract_sagittal_section(ax[idx + 2], mov_img, i, custom_colormap())
+        extract_sagittal_section(ax[idx + 2], mask, i, custom_colormap_for_mask()) if isinstance(mask, sitk.Image) else None
+
+        t += 1
+
+    plt.tight_layout()
+    plt.show()

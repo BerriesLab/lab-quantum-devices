@@ -1,11 +1,8 @@
-import numpy as np
-import SimpleITK as sitk
-import matplotlib.pyplot as plt
 from class_BrainAligner import BrainAligner
 from utilities import *
 
 
-def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
+def register_brain_atlas(fix_img: sitk.Image, mov_img: sitk.Image):
     """
     This function registers a brain atlas (moving image) to an MR image (fixed image).It consists in the following steps:
 
@@ -19,10 +16,11 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
     3. Initialize the registration by (i) aligning the brain atlas center with the MR image brain center, and (ii) rescaling the brain atlas
     to match approximately the brain in the MR image.
 
-    4. Rigid registration. Register the brain atlas with a rigid transformation. A mask is usd to limit the region available for registration.
-    The mask is defined as the atlas brain mask dilated with a 3D ball structuring element of radius 10 mm.
+    4. Registration. Register the brain atlas with a rigid and elastic transformation. A mask is usd to limit the region available for
+    registration. The mask is defined as the atlas brain mask dilated with a 3D ball structuring element of radius D (in mm).
 
-    5 Registration - Elastic."""
+    5. Calculate brain region in the MR image.
+    """
 
     # 1.
     mov_img = sitk.Cast(mov_img, fix_img.GetPixelID())
@@ -91,47 +89,8 @@ def register_brain(fix_img: sitk.Image, mov_img: sitk.Image):
                        delta_slice=[10, 10, 5],
                        n_slice=3)
 
-    return
+    # 5.
+    brain = sitk.BinaryThreshold(mov_img, lowerThreshold=0.001, insideValue=1)
 
+    return brain
 
-def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, mask: sitk.Image or None, slice, delta_slice, n_slice):
-    """
-    Plot xy, xz and yz slices of fixed and moving images overlay. The selected slices are determined
-    by the list of n tuples [(i, j, k)_1, (i, j, k)_2 ... (i, j, k)_n], where the i, j, and k represent
-    the voxel indices in the image coordinate system. Since the same tuples are used to extract slices of
-    both images, and the tuples are selected on the basis of the fixed image properties,
-    the plot is ideal to display the quality of the registration.
-    """
-
-    # Calculate initial slice
-    i0 = slice[0] - (delta_slice[0] * n_slice) // 2
-    j0 = slice[1] - (delta_slice[1] * n_slice) // 2
-    k0 = slice[2] - (delta_slice[2] * n_slice) // 2
-
-    fig, ax = plt.subplots(n_slice, 3)
-    ax = ax.flatten()
-    for t, idx in enumerate(np.linspace(0, n_slice + 3, 3, dtype=int)):
-
-        i = int(i0 + delta_slice[0] * idx)
-        j = int(j0 + delta_slice[0] * idx)
-        k = int(k0 + delta_slice[0] * idx)
-
-        ax[idx + 0].set_title("xy - axial") if idx == 0 else None
-        extract_axial_section(ax[idx + 0], fix_img, k, "gray")
-        extract_axial_section(ax[idx + 0], mov_img, k, custom_colormap())
-        extract_axial_section(ax[idx + 0], mask, k, custom_colormap_for_mask()) if isinstance(mask, sitk.Image) else None
-
-        ax[idx + 1].set_title("xz - coronal") if idx == 0 else None
-        extract_coronal_section(ax[idx + 1], fix_img, j, "gray")
-        extract_coronal_section(ax[idx + 1], mov_img, j, custom_colormap())
-        extract_coronal_section(ax[idx + 1], mask, j, custom_colormap_for_mask()) if isinstance(mask, sitk.Image) else None
-
-        ax[idx + 2].set_title("yz - sagittal") if idx == 0 else None
-        extract_sagittal_section(ax[idx + 2], fix_img, i, "gray")
-        extract_sagittal_section(ax[idx + 2], mov_img, i, custom_colormap())
-        extract_sagittal_section(ax[idx + 2], mask, i, custom_colormap_for_mask()) if isinstance(mask, sitk.Image) else None
-
-        t += 1
-
-    plt.tight_layout()
-    plt.show()

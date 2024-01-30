@@ -1,6 +1,7 @@
 import pandas as pd
 from imaging.mri.utilities import *
-from function_registration import register_brain
+from function_register_brain_atlas import register_brain_atlas
+from function_register_mri import register_mri
 
 # Skull stripping is performed on T1, 1T1 and 1/2T1 MR images. To the purpose of model training,
 # save the pairs (skull, brain segment): the brain segment will be used to weight the registration and model training.
@@ -46,20 +47,21 @@ for key, grp in grouped:
     print(grp[["series description", "series datetime", "direction", "dataset", "contrast dose"]].sort_values("series datetime"))
     print("\n")
 
-    # Register pre-contrast series
+    # Register pre-contrast image
     path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
     mri = read_dicom_series(path)
-    register_brain(fix_img=mri, mov_img=atlas)
+    brain_0t1w = register_brain_atlas(fix_img=mri, mov_img=atlas)
 
-    # Register 1/2-dose series
-    # To implement: use previous transformation parameters and slice indexes as initial parameters
+    # Register 1/2-dose image
     path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
     mri = read_dicom_series(path)
-    register_brain(fix_img=mri, mov_img=atlas)
+    brain_05t1w = register_brain_atlas(fix_img=mri, mov_img=atlas)
 
-    # Register Full-dose series
+    # Register Full-dose image
     path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
     mri = read_dicom_series(path)
-    register_brain(fix_img=mri, mov_img=atlas)
+    brain_1t1w = register_brain_atlas(fix_img=mri, mov_img=atlas)
+
+    register_mri(brain_0t1w, brain_05t1w, brain_1t1w)
 
 

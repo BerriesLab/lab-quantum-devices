@@ -1,6 +1,6 @@
 import numpy as np
 import SimpleITK as sitk
-from imaging.mri.function_registration import check_registration
+from imaging.mri.function_register_brain_atlas import check_registration
 import matplotlib.pyplot as plt
 
 D = 5e-3
@@ -34,3 +34,5 @@ check_registration(fix_img=fix_img,
                    slice=[fix_img.GetSize()[0]//2, fix_img.GetSize()[1]//2, fix_img.GetSize()[2]//2],
                    delta_slice=[10, 10, 5],
                    n_slice=3)
+
+brain = sitk.BinaryThreshold(mov_img, lowerThreshold=0.001, insideValue=1)
