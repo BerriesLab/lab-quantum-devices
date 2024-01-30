@@ -53,6 +53,7 @@ def register_brain_atlas(fix_img: sitk.Image, mov_img: sitk.Image):
     mov_img = sitk.Resample(mov_img, brain_aligner.transform)
     check_registration(fix_img=fix_img,
                        mov_img=mov_img,
+                       mask=None,
                        slice=[brain_aligner.i, brain_aligner.j, brain_aligner.k],
                        delta_slice=[10, 10, 10],
                        n_slice=3)

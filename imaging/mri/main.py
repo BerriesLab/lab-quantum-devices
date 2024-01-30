@@ -51,17 +51,22 @@ for key, grp in grouped:
     path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
     mri = read_dicom_series(path)
     brain_0t1w = register_brain_atlas(fix_img=mri, mov_img=atlas)
+    sitk.WriteImage(brain_0t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w_mask.nii.gz")
+    sitk.WriteImage(mri, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w.nii.gz")
 
     # Register 1/2-dose image
-    path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
+    path = grp[grp["contrast dose"] == 1/2]["series directory"].values[0]
     mri = read_dicom_series(path)
     brain_05t1w = register_brain_atlas(fix_img=mri, mov_img=atlas)
+    sitk.WriteImage(brain_05t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_05t1w_mask.nii.gz")
+    sitk.WriteImage(mri, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_05t1w.nii.gz")
 
     # Register Full-dose image
-    path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
+    path = grp[grp["contrast dose"] == 1]["series directory"].values[0]
     mri = read_dicom_series(path)
     brain_1t1w = register_brain_atlas(fix_img=mri, mov_img=atlas)
+    sitk.WriteImage(brain_1t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_1t1w_mask.nii.gz")
+    sitk.WriteImage(mri, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_1t1w.nii.gz")
 
     register_mri(brain_0t1w, brain_05t1w, brain_1t1w)
-
 

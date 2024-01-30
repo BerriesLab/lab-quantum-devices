@@ -88,13 +88,13 @@ def custom_colormap():
     n = 256  # Number of values in the colormap
     jet_colors = cmap_jet(np.linspace(0, 1, n))
     # Set alpha channel to 0 where the value is 0
-    jet_colors[:, 3] = np.where(np.linspace(0, 1, n) == 0, 0, 0.4)
+    jet_colors[:, 3] = np.where(np.linspace(0, 1, n) == 0, 0, 0.5)
     return LinearSegmentedColormap.from_list("custom_jet", jet_colors, n)
 
 
 def custom_colormap_for_mask():
     # Define the colors and corresponding values
-    colors = np.array([(0, 0, 0, 0), (0.8, 0, 0, 0.8)])  # (R, G, B, Alpha)
+    colors = np.array([(0, 0, 0, 0), (0.8, 0, 0, 0.5)])  # (R, G, B, Alpha)
     # Create a ListedColormap
     custom_cmap = ListedColormap(colors)
     return custom_cmap
@@ -141,3 +141,34 @@ def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, mask: sitk.Imag
 
     plt.tight_layout()
     plt.show()
+
+
+def check_contrast(img1: sitk.Image, img2: sitk.Image, idx):
+
+    i = idx[0]
+    j = idx[1]
+    k = idx[2]
+
+    fig, ax = plt.subplots(3, 3)
+    ax = ax.flatten()
+
+    ax[0].set_title("xy - axial") if idx == 0 else None
+    extract_axial_section(ax[0], img1, k, "gray")
+
+    ax[1].set_title("xz - coronal") if idx == 0 else None
+    extract_coronal_section(ax[1], img1, j, "gray")
+
+    ax[2].set_title("yz - sagittal") if idx == 0 else None
+    extract_sagittal_section(ax[2], img1, i, "gray")
+
+    extract_axial_section(ax[3], img2, k, "gray")
+    extract_coronal_section(ax[4], img2, j, "gray")
+    extract_sagittal_section(ax[5], img2, i, "gray")
+
+    extract_axial_section(ax[6], sitk.RescaleIntensity(sitk.Subtract(img2, img1), 0, 1), k, custom_colormap())
+    extract_coronal_section(ax[7], sitk.Subtract(img2, img1), j, custom_colormap())
+    extract_sagittal_section(ax[8], sitk.Subtract(img2, img1), i, custom_colormap())
+
+    plt.tight_layout()
+    plt.show()
+
