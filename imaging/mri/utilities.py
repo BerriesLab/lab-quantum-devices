@@ -1,7 +1,7 @@
 import numpy as np
 import SimpleITK as sitk
 import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
 
 def cosines_to_patient(direction_cosines):
@@ -49,43 +49,43 @@ def read_dicom_series(path_dicom_series):
     return image
 
 
-def extract_sagittal_section(img: sitk.Image, n=None):
-    """It assumes a 3D image"""
-    size = img.GetSize()
-    spacing = img.GetSpacing()
-    if n is None:
-        n = int(size[0]/2)
-    img_slice = sitk.Extract(img, [0, size[1], size[2]], [n, 0, 0])
-    plt.figure()
-    plt.imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', aspect=spacing[2] / spacing[1])
-    plt.axis("off")
-    plt.title("sagittal")
+def extract_axial_section(ax: plt.Axes, img: sitk.Image, n, cmap):
+    """Extract slice from sitk.Image in the xy plane."""
+    img_slice = sitk.Extract(img, [img.GetSize()[0], img.GetSize()[1], 0], [0, 0, n])
+    img_extent = (0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0)
+    ax.imshow(sitk.GetArrayFromImage(img_slice), cmap=cmap, extent=img_extent)
+    ax.set_axis_off()
 
 
-def extract_coronal_section(img: sitk.Image, n=None):
-    """It assumes a 3D image"""
-    size = img.GetSize()
-    spacing = img.GetSpacing()
-    if n is None:
-        n = int(size[1]/2)
-    img_slice = sitk.Extract(img, [size[0], 0, size[2]], [0, n, 0])
-    plt.figure()
-    plt.imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', aspect=spacing[2] / spacing[0])
-    plt.axis("off")
-    plt.title("coronal")
+def extract_coronal_section(ax: plt.Axes, img: sitk.Image, n, cmap):
+    """Extract slice from sitk.Image in the xz plane."""
+    img_slice = sitk.Extract(img, [img.GetSize()[0], 0, img.GetSize()[2]], [0, n, 0])
+    img_extent = (0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0)
+    ax.imshow(sitk.GetArrayFromImage(img_slice), cmap=cmap, extent=img_extent)
+    ax.set_axis_off()
 
 
-def extract_axial_section(img: sitk.Image, n=None):
-    """It assumes a 3D image"""
-    size = img.GetSize()
-    spacing = img.GetSpacing()
-    if n is None:
-        n = int(size[2] / 2)
-    img_slice = sitk.Extract(img, [size[0], size[1], 0], [0, 0, n])
-    plt.figure()
-    plt.imshow(sitk.GetArrayFromImage(img_slice), cmap='gray', aspect=spacing[1] / spacing[0])
-    plt.axis("off")
-    plt.title("axial")
+def extract_sagittal_section(ax: plt.Axes, img: sitk.Image, n, cmap):
+    """Extract slice from sitk.Image in the yz plane."""
+    img_slice = sitk.Extract(img, [0, img.GetSize()[1], img.GetSize()[2]], [n, 0, 0])
+    img_extent = (0,
+                  (0 + img_slice.GetSize()[0]) * img_slice.GetSpacing()[0],
+                  (0 - img_slice.GetSize()[1]) * img_slice.GetSpacing()[1],
+                  0)
+    ax.imshow(sitk.GetArrayFromImage(img_slice), cmap=cmap, extent=img_extent)
+    ax.set_axis_off()
+
+
+
+
+
+
 
 
 # Function to display slices and allow user to mark a point
@@ -132,7 +132,12 @@ def custom_colormap():
     jet_colors = cmap_jet(np.linspace(0, 1, n))
     # Set alpha channel to 0 where the value is 0
     jet_colors[:, 3] = np.where(np.linspace(0, 1, n) == 0, 0, 0.4)
-
     return LinearSegmentedColormap.from_list("custom_jet", jet_colors, n)
 
 
+def custom_colormap_for_mask():
+    # Define the colors and corresponding values
+    colors = np.array([(0, 0, 0, 0), (0.8, 0, 0, 0.8)])  # (R, G, B, Alpha)
+    # Create a ListedColormap
+    custom_cmap = ListedColormap(colors)
+    return custom_cmap
