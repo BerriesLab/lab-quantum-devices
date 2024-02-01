@@ -17,6 +17,10 @@ class BrainRegisterer:
         self.mri2 = mri2  # 1T1w
         self.atlas = atlas
 
+        self.msk0 = None
+        self.msk1 = None
+        self.msk2 = None
+
         self.origin = [0, 0, 0]
         self.spacing = [0.2, 0.2, 0.8]
         self.direction = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float).flatten()
@@ -44,6 +48,8 @@ class BrainRegisterer:
         registration. The mask is defined as the atlas brain mask dilated with a 3D ball structuring element of radius D (in mm).
 
         5. Calculate brain region in the MR image.
+
+        6. Co-register the three MR images, using their brain masks to limit the registration to the actual brain volume.
         """
 
         # 1 --------------------------------------------------------------------
@@ -70,67 +76,60 @@ class BrainRegisterer:
         self.atlas = sitk.HistogramMatching(image=self.atlas, referenceImage=self.mri0)
         print("Done.")
 
-        # 3 --------------------------------------------------------------------
+        # Note: we need a copy of the atlas to start over with each alignment, becasue the atlas gets deformed at every iteration otherwise
+        # 3.0 --------------------------------------------------------------------
         print("Starting Aligner...")
         brain_aligner = BrainAligner(self.mri0, self.atlas)
         brain_aligner.execute()
         self.atlas = sitk.Resample(self.atlas, brain_aligner.transform)
-        check_registration(self.mri0, self.atlas, None, [256, 256, 64], [5, 5, 5], 3)
 
-        # 4. --------------------------------------------------------------------
-        mask = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
-        r = np.array([self.d * 1e3 / mask.GetSpacing()[0],
-                      self.d * 1e3 / mask.GetSpacing()[1],
-                      self.d * 1e3 / mask.GetSpacing()[2]],
-                     dtype=int)
-        mask = sitk.BinaryDilate(mask, [int(x) for x in r])
-        mask_contour = sitk.BinaryDilate(sitk.BinaryContour(mask), [2, int(2 * r[1] / r[0]), int(2 * r[2] / r[0])])
+        # 4.0 --------------------------------------------------------------------
+        print("Starting Registration...")
+        self.generate_mask()
+        self.register_atlas(self.mri0)
+        check_registration(self.mri0, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
-        elastixImageFilter = sitk.ElastixImageFilter()
-        elastixImageFilter.SetFixedImage(self.mri0)
-        elastixImageFilter.SetMovingImage(self.atlas)
-        elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
-        elastixImageFilter.SetFixedMask(mask)
-        elastixImageFilter.Execute()
-        self.atlas = elastixImageFilter.GetResultImage()
-        check_registration(self.mri0, self.atlas, mask_contour, [256, 256, 64], [5, 5, 5], 3)
+        # 5.0 --------------------------------------------------------------------
+        self.msk0 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
 
-        elastixImageFilter.SetFixedImage(self.mri0)
-        elastixImageFilter.SetMovingImage(self.atlas)
-        elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("bspline"))
-        elastixImageFilter.SetFixedMask(mask)
-        elastixImageFilter.Execute()
-        self.atlas = elastixImageFilter.GetResultImage()
-        check_registration(self.mri0, self.atlas, mask_contour, [256, 256, 64], [5, 5, 5], 3)
+        # 3.1 --------------------------------------------------------------------
+        print("Starting Aligner...")
+        brain_aligner = BrainAligner(self.mri1, self.atlas)
+        brain_aligner.execute()
+        self.atlas = sitk.Resample(self.atlas, brain_aligner.transform)
 
+        # 4.1 --------------------------------------------------------------------
+        print("Starting Registration...")
+        self.generate_mask()
+        self.register_atlas(self.mri1)
+        check_registration(self.mri1, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
+        # 5.1 --------------------------------------------------------------------
+        self.msk2 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
 
-        #brain, mask, contour = self.register_atlas(self.mri0, self.atlas)
+        # 3.2 --------------------------------------------------------------------
+        print("Starting Aligner...")
+        brain_aligner = BrainAligner(self.mri2, self.atlas)
+        brain_aligner.execute()
+        self.atlas = sitk.Resample(self.atlas, brain_aligner.transform)
 
-        check_registration(fix_img=self.mri1,
-                           mov_img=brain,
-                           mask=contour,
-                           slice=[brain_aligner.i, brain_aligner.j, brain_aligner.k],
-                           delta_slice=[10, 10, 5],
-                           n_slice=3)
+        # 4.2 --------------------------------------------------------------------
+        print("Starting Registration...")
+        self.generate_mask()
+        self.register_atlas(self.mri2)
+        check_registration(self.mri2, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
+        # 5.2 --------------------------------------------------------------------
+        self.msk2 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
 
-
-
-
-
-
-
-
-        # # 4 --------------------------------------------------------------------
-        # self.register_atlas()
-        # # 5 --------------------------------------------------------------------
-        # brain = sitk.BinaryThreshold(self.mov_img, lowerThreshold=0.001, insideValue=1)
-
-        #sitk.WriteImage(brain_0t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w_mask.nii.gz")
-        #sitk.WriteImage(mri_0t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w.nii.gz")
-
-
+        # 6. --------------------------------------------------------------------
+        #self.register_mri()
+        sitk.WriteImage(self.mri0, f"E:/2021_local_data/2023_Gd_synthesis/tests/_0t1w.nii.gz")
+        sitk.WriteImage(self.msk0, f"E:/2021_local_data/2023_Gd_synthesis/tests/_0t1w_mask.nii.gz")
+        sitk.WriteImage(self.mri1, f"E:/2021_local_data/2023_Gd_synthesis/tests/_05t1w.nii.gz")
+        sitk.WriteImage(self.msk2, f"E:/2021_local_data/2023_Gd_synthesis/tests/_05t1w_mask.nii.gz")
+        sitk.WriteImage(self.mri2, f"E:/2021_local_data/2023_Gd_synthesis/tests/_1t1w.nii.gz")
+        sitk.WriteImage(self.msk2, f"E:/2021_local_data/2023_Gd_synthesis/tests/_1t1w_mask.nii.gz")
 
     def project_img_in_custom_space(self, img):
         """This method rescale the intensity in the range [0, 1], and then project the passed image in the physical space
@@ -166,33 +165,51 @@ class BrainRegisterer:
         """Match intensity histogram of moving image to intensity histogram of fixed image"""
         self.atlas = sitk.HistogramMatching(image=self.atlas, referenceImage=self.mri0)
 
-    def register_atlas(self, fix_img, mov_img):
-
-        mask = sitk.BinaryThreshold(mov_img, lowerThreshold=0.001, insideValue=1)
-        r = np.array([self.d * 1e3 / mask.GetSpacing()[0],
-                      self.d * 1e3 / mask.GetSpacing()[1],
-                      self.d * 1e3 / mask.GetSpacing()[2]],
+    def generate_mask(self):
+        self.mask = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
+        r = np.array([self.d * 1e3 / self.mask.GetSpacing()[0],
+                      self.d * 1e3 / self.mask.GetSpacing()[1],
+                      self.d * 1e3 / self.mask.GetSpacing()[2]],
                      dtype=int)
-        mask = sitk.BinaryDilate(mask, [int(x) for x in r])
-        mask_contour = sitk.BinaryDilate(sitk.BinaryContour(mask), [2, int(2 * r[1] / r[0]), int(2 * r[2] / r[0])])
+        self.mask = sitk.BinaryDilate(self.mask, [int(x) for x in r])
+        self.mask_contour = sitk.BinaryDilate(sitk.BinaryContour(self.mask), [2, int(2 * r[1] / r[0]), int(2 * r[2] / r[0])])
+
+    def register_atlas(self, img):
+        """This method register the brain atlas to the passed mri image, using a user defined mask that
+        prevents the brain atlas to exceed the actual brain volume."""
+        elastixImageFilter = sitk.ElastixImageFilter()
+        elastixImageFilter.SetFixedImage(img)
+        elastixImageFilter.SetMovingImage(self.atlas)
+        elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
+        elastixImageFilter.SetFixedMask(self.mask)
+        elastixImageFilter.Execute()
+        self.atlas = elastixImageFilter.GetResultImage()
+
+        elastixImageFilter.SetFixedImage(img)
+        elastixImageFilter.SetMovingImage(self.atlas)
+        elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("bspline"))
+        elastixImageFilter.SetFixedMask(self.mask)
+        elastixImageFilter.Execute()
+        self.atlas = elastixImageFilter.GetResultImage()
+
+    def register_mri(self):
+        """This method register the mri1 and mri2 to mri0, using their masks to limit the registration to the
+        actual brain volume."""
+        elastixImageFilter = sitk.ElastixImageFilter()
+        elastixImageFilter.SetFixedImage(self.mri0)
+        elastixImageFilter.SetMovingImage(self.mri1)
+        elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
+        elastixImageFilter.SetFixedMask(self.msk0)
+        elastixImageFilter.SetMovingMask(self.msk1)
+        elastixImageFilter.Execute()
+        self.mri1 = elastixImageFilter.GetResultImage()
 
         elastixImageFilter = sitk.ElastixImageFilter()
-        elastixImageFilter.SetFixedImage(fix_img)
-        elastixImageFilter.SetMovingImage(mov_img)
+        elastixImageFilter.SetFixedImage(self.mri0)
+        elastixImageFilter.SetMovingImage(self.mri2)
         elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
-        elastixImageFilter.SetFixedMask(mask)
+        elastixImageFilter.SetFixedMask(self.msk0)
+        elastixImageFilter.SetMovingMask(self.msk2)
         elastixImageFilter.Execute()
-        mov_img = elastixImageFilter.GetResultImage()
+        self.mri2 = elastixImageFilter.GetResultImage()
 
-        elastixImageFilter.SetFixedImage(fix_img)
-        elastixImageFilter.SetMovingImage(mov_img)
-        elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("bspline"))
-        elastixImageFilter.SetFixedMask(mask)
-        elastixImageFilter.Execute()
-        mov_img = elastixImageFilter.GetResultImage()
-
-        return mov_img, mask, mask_contour
-
-    def save_images(self):
-        sitk.WriteImage(self.fix_img, "E:/2021_local_data/2023_Gd_synthesis/tests/fix img.nii.gz")
-        sitk.WriteImage(self.mov_img, "E:/2021_local_data/2023_Gd_synthesis/tests/mov img.nii.gz")

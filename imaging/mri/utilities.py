@@ -35,17 +35,13 @@ def cosines_to_patient(direction_cosines):
 
 
 def read_dicom_series(path_dicom_series):
-    """Read a DICOM series and convert it to 3D nifti image"""
-    # Load the DICOM series
+
+    """Read a DICOM series and save it in memory as sitk.Image"""
     reader = sitk.ImageSeriesReader()
     dicom_series = reader.GetGDCMSeriesFileNames(path_dicom_series)
     reader.SetFileNames(dicom_series)
     image = reader.Execute()
-    # Convert the SimpleITK image to NIfTI format in memory
-    # nifti_image = sitk.GetImageFromArray(sitk.GetArrayFromImage(image))
-    # nifti_image.CopyInformation(image)
-    # Convert the SimpleITK image to NIfTI format
-    # sitk.WriteImage(image, path_nifti)
+
     return image
 
 

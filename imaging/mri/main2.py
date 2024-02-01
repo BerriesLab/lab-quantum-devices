@@ -55,8 +55,10 @@ for key, grp in grouped:
     mri_05t1w = read_dicom_series(path)
     path = grp[grp["contrast dose"] == 1]["series directory"].values[0]
     mri_1t1w = read_dicom_series(path)
+
     brain_registerer = BrainRegisterer(mri_0t1w, mri_05t1w, mri_1t1w, atlas)
     brain_registerer.execute()
+
     brain_0t1w = register_brain_atlas(fix_img=mri_0t1w, mov_img=atlas)
     sitk.WriteImage(brain_0t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w_mask.nii.gz")
     sitk.WriteImage(mri_0t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w.nii.gz")
