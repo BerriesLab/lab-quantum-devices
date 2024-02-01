@@ -12,7 +12,7 @@ class BrainAligner:
     could be included in this class.
     """
 
-    def __init__(self, fix_img: sitk.Image, mov_img: sitk.Image):
+    def __init__(self, mri1: sitk.Image, mri2: sitk.Image, mri3: sitk.Image, atlas: sitk.Image):
         """
         The physical space is described by the (x, y, z) coordinate system
         The fixed image space is described by the (i, j, k) coordinate system
@@ -22,8 +22,10 @@ class BrainAligner:
         self.fig = None
         self.ax = None
 
-        self.fix_img = fix_img
-        self.mov_img = mov_img
+        self.atlas = atlas
+        self.mri1 = mri1
+        self.mri2 = mri2
+        self.mri3 = mri3
 
         self.click1 = None
         self.click2 = None
@@ -64,7 +66,10 @@ class BrainAligner:
         selection of the image centers, and the translation of the brain atlas, is stored as attribute and the image closed.
         Note: this is the only solution that keeps the fixed image in its starting position."""
         # plot slices passing through the image volume center
-        self.create_figure()
+        self.create_figure(self.atlas)
+        self.create_figure(self.mri1)
+        self.create_figure(self.mri2)
+        self.create_figure(self.mri3)
         self.update_figure(np.array(self.fix_img.GetSize(), dtype=int) // 2,
                            np.array(self.mov_img.GetSize(), dtype=int) // 2)
         print("Left-click to mark images center.\n"
@@ -77,120 +82,84 @@ class BrainAligner:
         mplcursors.cursor(hover=True)
         plt.show()
 
-    def create_figure(self):
+    def create_figure(self, img: sitk.Image):
         """Create figure and axes for brain centering"""
-        fig, ax = plt.subplots(3, 3)
+        fig, ax = plt.subplots(2, 3)
         plt.show(block=False)
-        for idx, item in enumerate(ax.flatten()):
-            item.set_axis_off()
+
+        for idx, ax in enumerate(ax.flatten()):
+            ax.set_axis_off()
 
         ax[0, 0].set_title("xy - axial")
         ax[0, 1].set_title("xz - coronal")
         ax[0, 2].set_title("yz - sagittal")
 
-        # 1st row - fixed image -----------------------------------------------------------
+        # 1st row - img -----------------------------------------------------------
         ax[0, 0].set_label("xy fix")
-        ax[0, 0].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[0], self.fix_img.GetSize()[1])),
+        ax[0, 0].imshow(X=np.zeros(shape=(img.GetSize()[0], img.GetSize()[1])),
                         cmap='gray',
                         extent=[0,
-                                self.fix_img.GetSize()[0] * self.fix_img.GetSpacing()[0],
-                                - self.fix_img.GetSize()[1] * self.fix_img.GetSpacing()[1],
+                                img.GetSize()[0] * img.GetSpacing()[0],
+                                - img.GetSize()[1] * img.GetSpacing()[1],
                                 0],
                         vmin=0,
                         vmax=1)
-        ax[0, 0].axhline(y=-self.fix_img.GetSize()[1] // 2 * self.fix_img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
-        ax[0, 0].axvline(x=self.fix_img.GetSize()[0] // 2 * self.fix_img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
+        ax[0, 0].axhline(y=-img.GetSize()[1] // 2 * img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
+        ax[0, 0].axvline(x=img.GetSize()[0] // 2 * img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
 
         ax[0, 1].set_label("xz fix")
-        ax[0, 1].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[0], self.fix_img.GetSize()[2])),
+        ax[0, 1].imshow(X=np.zeros(shape=(img.GetSize()[0], img.GetSize()[2])),
                         cmap='gray',
                         extent=[0,
-                                self.fix_img.GetSize()[0] * self.fix_img.GetSpacing()[0],
-                                - self.fix_img.GetSize()[2] * self.fix_img.GetSpacing()[2],
+                                img.GetSize()[0] * img.GetSpacing()[0],
+                                - img.GetSize()[2] * img.GetSpacing()[2],
                                 0],
                         vmin=0,
                         vmax=1)
-        ax[0, 1].axhline(y=-self.fix_img.GetSize()[2] // 2 * self.fix_img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
-        ax[0, 1].axvline(x=self.fix_img.GetSize()[0] // 2 * self.fix_img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
+        ax[0, 1].axhline(y=-img.GetSize()[2] // 2 * img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
+        ax[0, 1].axvline(x=img.GetSize()[0] // 2 * img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
 
         ax[0, 2].set_label("yz fix")
-        ax[0, 2].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[1], self.fix_img.GetSize()[2])),
+        ax[0, 2].imshow(X=np.zeros(shape=(img.GetSize()[1], img.GetSize()[2])),
                         cmap='gray',
                         extent=[0,
-                                self.fix_img.GetSize()[1] * self.fix_img.GetSpacing()[1],
-                                - self.fix_img.GetSize()[2] * self.fix_img.GetSpacing()[2],
+                                img.GetSize()[1] * img.GetSpacing()[1],
+                                - img.GetSize()[2] * img.GetSpacing()[2],
                                 0],
                         vmin=0,
                         vmax=1)
-        ax[0, 2].axhline(y=-self.fix_img.GetSize()[2] // 2 * self.fix_img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
-        ax[0, 2].axvline(x=self.fix_img.GetSize()[1] // 2 * self.fix_img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
+        ax[0, 2].axhline(y=-img.GetSize()[2] // 2 * img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
+        ax[0, 2].axvline(x=img.GetSize()[1] // 2 * img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
 
-        # 2nd row - moving image -----------------------------------------------------------
-        ax[1, 0].set_label("xy mov")
-        ax[1, 0].imshow(X=np.zeros(shape=(self.mov_img.GetSize()[0], self.mov_img.GetSize()[1])),
+        # 2rd row - overlay ------------------------------------------------------------------
+        ax[1, 0].set_label("xy ovl")
+        ax[1, 0].imshow(X=np.zeros(shape=(img.GetSize()[0], img.GetSize()[1])),
                         cmap='gray',
                         extent=[0,
-                                self.mov_img.GetSize()[0] * self.mov_img.GetSpacing()[0],
-                                - self.mov_img.GetSize()[1] * self.mov_img.GetSpacing()[1],
+                                img.GetSize()[0] * img.GetSpacing()[0],
+                                - img.GetSize()[1] * img.GetSpacing()[1],
                                 0],
                         vmin=0,
                         vmax=1)
-        ax[1, 0].axhline(y=-self.mov_img.GetSize()[1] // 2 * self.mov_img.GetSpacing()[1], color='olive', linestyle='--', linewidth=1)
-        ax[1, 0].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
-
-        ax[1, 1].set_label("xz mov")
-        ax[1, 1].imshow(X=np.zeros(shape=(self.mov_img.GetSize()[0], self.mov_img.GetSize()[2])),
-                        cmap='gray',
-                        extent=[0,
-                                self.mov_img.GetSize()[0] * self.mov_img.GetSpacing()[0],
-                                - self.mov_img.GetSize()[2] * self.mov_img.GetSpacing()[2],
-                                0],
-                        vmin=0,
-                        vmax=1)
-        ax[1, 1].axhline(y=-self.mov_img.GetSize()[2] // 2 * self.mov_img.GetSpacing()[2], color='olive', linestyle='--', linewidth=1)
-        ax[1, 1].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
-
-        ax[1, 2].set_label("yz mov")
-        ax[1, 2].imshow(X=np.zeros(shape=(self.mov_img.GetSize()[1], self.mov_img.GetSize()[2])),
-                        cmap='gray',
-                        extent=[0,
-                                self.mov_img.GetSize()[1] * self.mov_img.GetSpacing()[1],
-                                - self.mov_img.GetSize()[2] * self.mov_img.GetSpacing()[2],
-                                0],
-                        vmin=0,
-                        vmax=1)
-        ax[1, 2].axhline(y=-self.mov_img.GetSize()[2] // 2 * self.mov_img.GetSpacing()[2], color='olive', linestyle='--', linewidth=1)
-        ax[1, 2].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
-
-        # 3rd row - overlay ------------------------------------------------------------------
-        ax[2, 0].set_label("xy ovl")
-        ax[2, 0].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[0], self.fix_img.GetSize()[1])),
-                        cmap='gray',
-                        extent=[0,
-                                self.fix_img.GetSize()[0] * self.fix_img.GetSpacing()[0],
-                                - self.fix_img.GetSize()[1] * self.fix_img.GetSpacing()[1],
-                                0],
-                        vmin=0,
-                        vmax=1)
-        ax[2, 0].imshow(X=np.zeros(shape=(self.mov_img.GetSize()[0], self.mov_img.GetSize()[1])),
+        ax[1, 0].imshow(X=np.zeros(shape=(img.GetSize()[0], img.GetSize()[1])),
                         cmap=custom_colormap(),
                         extent=[0,
-                                self.mov_img.GetSize()[0] * self.mov_img.GetSpacing()[0],
-                                - self.mov_img.GetSize()[1] * self.mov_img.GetSpacing()[1],
+                                img.GetSize()[0] * img.GetSpacing()[0],
+                                - img.GetSize()[1] * img.GetSpacing()[1],
                                 0],
                         vmin=0,
                         vmax=1)
-        ax[2, 0].axhline(y=-self.fix_img.GetSize()[1] // 2 * self.fix_img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
-        ax[2, 0].axvline(x=self.fix_img.GetSize()[0] // 2 * self.fix_img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
-        ax[2, 0].axhline(y=-self.mov_img.GetSize()[1] // 2 * self.mov_img.GetSpacing()[1], color='olive', linestyle='--', linewidth=1)
-        ax[2, 0].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
+        ax[1, 0].axhline(y=-img.GetSize()[1] // 2 * img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
+        ax[1, 0].axvline(x=img.GetSize()[0] // 2 * img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
+        ax[1, 0].axhline(y=-img.GetSize()[1] // 2 * img.GetSpacing()[1], color='olive', linestyle='--', linewidth=1)
+        ax[1, 0].axvline(x=img.GetSize()[0] // 2 * img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
 
         ax[2, 1].set_label("xz ovl")
-        ax[2, 1].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[0], self.fix_img.GetSize()[2])),
+        ax[2, 1].imshow(X=np.zeros(shape=(img.GetSize()[0], img.GetSize()[2])),
                         cmap='gray',
                         extent=[0,
-                                self.fix_img.GetSize()[0] * self.fix_img.GetSpacing()[0],
-                                - self.fix_img.GetSize()[2] * self.fix_img.GetSpacing()[2],
+                                img.GetSize()[0] * img.GetSpacing()[0],
+                                - img.GetSize()[2] * img.GetSpacing()[2],
                                 0],
                         vmin=0,
                         vmax=1)
@@ -202,17 +171,17 @@ class BrainAligner:
                                 0],
                         vmin=0,
                         vmax=1)
-        ax[2, 1].axhline(y=-self.fix_img.GetSize()[2] // 2 * self.fix_img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
-        ax[2, 1].axvline(x=self.fix_img.GetSize()[0] // 2 * self.fix_img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 1].axhline(y=-img.GetSize()[2] // 2 * img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 1].axvline(x=img.GetSize()[0] // 2 * img.GetSpacing()[0], color='darkred', linestyle='--', linewidth=1)
         ax[2, 1].axhline(y=-self.mov_img.GetSize()[2] // 2 * self.mov_img.GetSpacing()[2], color='olive', linestyle='--', linewidth=1)
         ax[2, 1].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
 
         ax[2, 2].set_label("yz ovl")
-        ax[2, 2].imshow(X=np.zeros(shape=(self.fix_img.GetSize()[1], self.fix_img.GetSize()[2])),
+        ax[2, 2].imshow(X=np.zeros(shape=(img.GetSize()[1], img.GetSize()[2])),
                         cmap='gray',
                         extent=[0,
-                                self.fix_img.GetSize()[1] * self.fix_img.GetSpacing()[1],
-                                - self.fix_img.GetSize()[2] * self.fix_img.GetSpacing()[2],
+                                img.GetSize()[1] * img.GetSpacing()[1],
+                                - img.GetSize()[2] * img.GetSpacing()[2],
                                 0],
                         vmin=0,
                         vmax=1)
@@ -224,8 +193,8 @@ class BrainAligner:
                                 0],
                         vmin=0,
                         vmax=1)
-        ax[2, 2].axhline(y=-self.fix_img.GetSize()[2] // 2 * self.fix_img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
-        ax[2, 2].axvline(x=self.fix_img.GetSize()[1] // 2 * self.fix_img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 2].axhline(y=-img.GetSize()[2] // 2 * img.GetSpacing()[2], color='darkred', linestyle='--', linewidth=1)
+        ax[2, 2].axvline(x=img.GetSize()[1] // 2 * img.GetSpacing()[1], color='darkred', linestyle='--', linewidth=1)
         ax[2, 2].axhline(y=-self.mov_img.GetSize()[2] // 2 * self.mov_img.GetSpacing()[2], color='olive', linestyle='--', linewidth=1)
         ax[2, 2].axvline(x=self.mov_img.GetSize()[0] // 2 * self.mov_img.GetSpacing()[0], color='olive', linestyle='--', linewidth=1)
 

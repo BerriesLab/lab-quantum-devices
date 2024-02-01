@@ -82,13 +82,13 @@ def extract_sagittal_section(ax: plt.Axes, img: sitk.Image, n, cmap):
     ax.set_axis_off()
 
 
-def custom_colormap():
+def custom_colormap(vmin=0, vmax=1):
     # Create a custom colormap based on "jet"
     cmap_jet = plt.colormaps.get_cmap("afmhot")
     n = 256  # Number of values in the colormap
-    jet_colors = cmap_jet(np.linspace(0, 1, n))
+    jet_colors = cmap_jet(np.linspace(vmin, vmax, n))
     # Set alpha channel to 0 where the value is 0
-    jet_colors[:, 3] = np.where(np.linspace(0, 1, n) == 0, 0, 0.5)
+    jet_colors[:, 3] = np.where(np.linspace(vmin, vmax, n) == 0, 0, 0.5)
     return LinearSegmentedColormap.from_list("custom_jet", jet_colors, n)
 
 
@@ -165,10 +165,30 @@ def check_contrast(img1: sitk.Image, img2: sitk.Image, idx):
     extract_coronal_section(ax[4], img2, j, "gray")
     extract_sagittal_section(ax[5], img2, i, "gray")
 
-    extract_axial_section(ax[6], sitk.RescaleIntensity(sitk.Subtract(img2, img1), 0, 1), k, custom_colormap())
-    extract_coronal_section(ax[7], sitk.Subtract(img2, img1), j, custom_colormap())
-    extract_sagittal_section(ax[8], sitk.Subtract(img2, img1), i, custom_colormap())
+    img_sub = sitk.Subtract(img2, img1)
+    img_sub = rescale_intensity_zscore([img_sub])[0]
+
+    extract_axial_section(ax[6], img_sub, k, "seismic")
+    extract_coronal_section(ax[7], img_sub, j, "seismic")
+    extract_sagittal_section(ax[8], img_sub, i, "seismic")
 
     plt.tight_layout()
     plt.show()
+
+
+def rescale_intensity_zscore(img: sitk.Image or list[sitk.Image]):
+    """Rescale image intensity according to the z-score metric in the interval [0, 1]."""
+
+    for idx, val in enumerate(img) if isinstance(img, list) else enumerate([img]):
+
+        stats = sitk.StatisticsImageFilter()
+        stats.Execute(val)
+        sigma = stats.GetSigma()
+        mean = stats.GetMean()
+        val = sitk.Add(val, -mean)
+        val = sitk.Divide(val, sigma)
+
+        img[idx] = val
+
+    return img
 

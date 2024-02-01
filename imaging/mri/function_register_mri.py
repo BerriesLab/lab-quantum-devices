@@ -1,8 +1,7 @@
 import SimpleITK as sitk
-from utilities import *
 
 
-def register_mri(img1: list[sitk.Image, sitk.Image], img2: list[sitk.Image, sitk.Image]):
+def register_mri(img1: sitk.Image, msk1: sitk.Image, img2: sitk.Image, msk2: sitk.Image):
     """
     This function register img2 and img3 to img1, where:
     - img1: 0T1
@@ -13,45 +12,31 @@ def register_mri(img1: list[sitk.Image, sitk.Image], img2: list[sitk.Image, sitk
     """
 
     # Cast images and masks in the right format
-    sitk.Cast(img1[0], sitk.sitkFloat64)
-    sitk.Cast(img1[1], sitk.sitkUInt8)
-    sitk.Cast(img2[0], sitk.sitkFloat64)
-    sitk.Cast(img2[1], sitk.sitkUInt8)
+    img1 = sitk.Cast(img1, sitk.sitkFloat64)
+    msk1 = sitk.Cast(msk1, sitk.sitkUInt8)
+    img2 = sitk.Cast(img2, sitk.sitkFloat64)
+    msk2 = sitk.Cast(msk2, sitk.sitkUInt8)
 
     # Resample img2 and mask in the physical space of img1
-    img2[0] = sitk.Resample(image1=img2[0],
-                            referenceImage=img1[0],
-                            transform=sitk.AffineTransform(3),
-                            interpolator=sitk.sitkLinear,
-                            defaultPixelValue=0)
+    img2 = sitk.Resample(image1=img2,
+                         referenceImage=img1,
+                         transform=sitk.AffineTransform(3),
+                         interpolator=sitk.sitkLinear,
+                         defaultPixelValue=0)
 
-    img2[1] = sitk.Resample(image1=img2[1],
-                            referenceImage=img1[0],
-                            transform=sitk.AffineTransform(3),
-                            interpolator=sitk.sitkLinear,
-                            defaultPixelValue=0)
+    msk2 = sitk.Resample(image1=msk2,
+                         referenceImage=img1,
+                         transform=sitk.AffineTransform(3),
+                         interpolator=sitk.sitkLinear,
+                         defaultPixelValue=0)
 
     # register img2
     elastixImageFilter = sitk.ElastixImageFilter()
-    elastixImageFilter.SetFixedImage(img1[0])
-    elastixImageFilter.SetMovingImage(img2[0])
+    elastixImageFilter.SetFixedImage(img1)
+    elastixImageFilter.SetMovingImage(img2)
     elastixImageFilter.SetParameterMap(sitk.GetDefaultParameterMap("rigid"))
-    elastixImageFilter.SetFixedMask(img1[1])
-    elastixImageFilter.SetMovingMask(img2[1])
+    elastixImageFilter.SetFixedMask(msk1)
+    elastixImageFilter.SetMovingMask(msk2)
     elastixImageFilter.Execute()
 
-    return img2[0]
-
-
-mri1 = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/tests/2225172_0t1w.nii.gz")
-msk1 = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/tests/2225172_0t1w_mask.nii.gz")
-mri2 = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/tests/2225172_05t1w.nii.gz")
-msk2 = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/tests/2225172_05t1w_mask.nii.gz")
-mri3 = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/tests/2225172_1t1w.nii.gz")
-msk3 = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/tests/2225172_1t1w_mask.nii.gz")
-
-# Image intensity harmonization - with Z-Score?
-
-mri3_reg = register_mri([mri1, msk1], [mri3, msk3])
-check_registration(mri1, mri3_reg, None, [int(x // 2) for x in mri1.GetSize()], [10, 10, 5], 3)
-check_contrast(mri1, mri3_reg, [int(x // 2) for x in mri1.GetSize()])
+    return img1, img2
