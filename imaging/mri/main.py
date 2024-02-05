@@ -23,7 +23,10 @@ df["series datetime"] = pd.to_datetime(df["series datetime"], format="%Y.%m.%d %
 
 # group data and find series to load in dataset
 grouped = df.groupby(["patient species", "patient id"])
-for key, grp in grouped:
+for idx, (key, grp) in enumerate(grouped):
+    print(idx)
+    if idx== 0:
+        continue
 
     # select dogs and make sure there are three T1 series
     if key[0] != "dog" or grp["series description"].count() != 3:
