@@ -2,6 +2,7 @@ import pandas as pd
 from imaging.mri.utilities import *
 from function_register_brain_atlas import register_brain_atlas
 from function_register_mri import register_mri
+from class_BrainRegisterer import BrainRegisterer
 
 # Skull stripping is performed on T1, 1T1 and 1/2T1 MR images. To the purpose of model training,
 # save the pairs (skull, brain segment): the brain segment will be used to weight the registration and model training.
@@ -24,9 +25,6 @@ df["series datetime"] = pd.to_datetime(df["series datetime"], format="%Y.%m.%d %
 # group data and find series to load in dataset
 grouped = df.groupby(["patient species", "patient id"])
 for idx, (key, grp) in enumerate(grouped):
-    print(idx)
-    if idx== 0:
-        continue
 
     # select dogs and make sure there are three T1 series
     if key[0] != "dog" or grp["series description"].count() != 3:
@@ -53,27 +51,17 @@ for idx, (key, grp) in enumerate(grouped):
     # Register pre-contrast image
     path = grp[grp["contrast dose"] == 0]["series directory"].values[0]
     mri_0t1w = read_dicom_series(path)
-    brain_0t1w = register_brain_atlas(fix_img=mri_0t1w, mov_img=atlas)
-    sitk.WriteImage(brain_0t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w_mask.nii.gz")
-    sitk.WriteImage(mri_0t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_0t1w.nii.gz")
-
-    # Register 1/2-dose image
-    path = grp[grp["contrast dose"] == 1/2]["series directory"].values[0]
+    path = grp[grp["contrast dose"] == 1 / 2]["series directory"].values[0]
     mri_05t1w = read_dicom_series(path)
-    brain_05t1w = register_brain_atlas(fix_img=mri_05t1w, mov_img=atlas)
-    sitk.WriteImage(brain_05t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_05t1w_mask.nii.gz")
-    sitk.WriteImage(mri_05t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_05t1w.nii.gz")
-
-    # Register Full-dose image
     path = grp[grp["contrast dose"] == 1]["series directory"].values[0]
     mri_1t1w = read_dicom_series(path)
-    brain_1t1w = register_brain_atlas(fix_img=mri_1t1w, mov_img=atlas)
-    sitk.WriteImage(brain_1t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_1t1w_mask.nii.gz")
-    sitk.WriteImage(mri_1t1w, f"E:/2021_local_data/2023_Gd_synthesis/tests/{key[1]}_1t1w.nii.gz")
 
-    # Image intensity harmonization with Z-Score
-    mri_0t1w, mri_05t1w, mri_1t1w = rescale_intensity_zscore([mri_0t1w, mri_05t1w, mri_1t1w])
+    brain_registerer = BrainRegisterer(mri_0t1w, mri_05t1w, mri_1t1w, atlas, key[1])
+    brain_registerer.execute()
 
-    # Image registration
-    register_mri([mri_0t1w, mri_05t1w, mri_1t1w])
+    check_registration(brain_registerer.mri0, brain_registerer.mri1, None, [int(x//2) for x in brain_registerer.mri0.GetSize()], [10, 10, 5], 3)
+    check_registration(brain_registerer.mri0, brain_registerer.mri2, None, [int(x//2) for x in brain_registerer.mri0.GetSize()], [10, 10, 5], 3)
+
+
+
 

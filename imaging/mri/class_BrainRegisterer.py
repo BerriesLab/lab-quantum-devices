@@ -10,7 +10,7 @@ class BrainRegisterer:
     The registration it executed by running the 'execute()' method.
     """
 
-    def __init__(self, mri0: sitk.Image, mri1: sitk.Image, mri2: sitk.Image, atlas: sitk.Image, patient_id: int, d: float = 5e-3):
+    def __init__(self, mri0: sitk.Image, mri1: sitk.Image, mri2: sitk.Image, atlas: sitk.Image, patient_id: int, d: float = 10e-3):
 
         self.patient_id = patient_id
 
@@ -18,15 +18,16 @@ class BrainRegisterer:
         self.mri0 = mri0  # T1w
         self.mri1 = mri1  # T1wC0.5
         self.mri2 = mri2  # T1wC1.0
-        self.atlas = atlas  # Brain Atlas
+        self.atlas0 = atlas  # Brain Atlas - Original copy
+        self.atlas = atlas  # Brain Atlas - It includes deformations
         self.mri2_0 = None  # MRI subtraction: mri2 - mri0
         self.mri1_0 = None  # MRI subtraction: mri1 - mri0
 
         # Initialize the Region of Interest for data visualization
-        self.roi_mri0 = sitk.RegionOfInterestImageFilter()
-        self.roi_mri1 = sitk.RegionOfInterestImageFilter()
-        self.roi_mri2 = sitk.RegionOfInterestImageFilter()
-        self.roi_atlas = sitk.RegionOfInterestImageFilter()
+        # self.roi_mri0 = sitk.RegionOfInterestImageFilter()
+        # self.roi_mri1 = sitk.RegionOfInterestImageFilter()
+        # self.roi_mri2 = sitk.RegionOfInterestImageFilter()
+        # self.roi_atlas = sitk.RegionOfInterestImageFilter()
 
         # Initialize masks for registration
         self.msk0 = None
@@ -35,7 +36,7 @@ class BrainRegisterer:
 
         # Characteristics of common physical space
         self.origin = [0, 0, 0]
-        self.spacing = [0.2, 0.2, 0.8]
+        self.spacing = [0.2, 0.2, 0.2]
         self.direction = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float).flatten()
         self.size = [512, 512, 128]
 
@@ -100,54 +101,51 @@ class BrainRegisterer:
         self.mri1 = sitk.HistogramMatching(image=self.mri1, referenceImage=self.mri0)
         self.mri2 = sitk.HistogramMatching(image=self.mri2, referenceImage=self.mri0)
         self.atlas = sitk.HistogramMatching(image=self.atlas, referenceImage=self.mri0)
+        self.atlas0 = self.atlas
         print("Done.")
 
-        # Note: we need a copy of the atlas to start over with each alignment, because the atlas gets deformed at every iteration otherwise
-        # 3.0 --------------------------------------------------------------------
+        # 3.0 to 5.0 -----------------------------------------------------------
         print("Starting Aligner...")
         brain_aligner = BrainAligner(self.mri0, self.atlas)
         brain_aligner.execute()
         self.atlas = sitk.Resample(self.atlas, brain_aligner.transform)
-        check_registration(self.mri0, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
-        # 4.0 --------------------------------------------------------------------
         print("Starting Registration...")
         self.generate_mask()
         self.register_atlas(self.mri0)
         check_registration(self.mri0, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
-        # 5.0 --------------------------------------------------------------------
+        print(f"Generating Brain Mask for Patient {self.patient_id}")
         self.msk0 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
+        self.atlas = self.atlas0
 
-        # 3.1 --------------------------------------------------------------------
+        # 3.1 to 5.1 ------------------------------------------------------------
         print("Starting Aligner...")
         brain_aligner = BrainAligner(self.mri1, self.atlas)
         brain_aligner.execute()
         self.atlas = sitk.Resample(self.atlas, brain_aligner.transform)
 
-        # 4.1 --------------------------------------------------------------------
         print("Starting Registration...")
         self.generate_mask()
         self.register_atlas(self.mri1)
         check_registration(self.mri1, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
-        # 5.1 --------------------------------------------------------------------
         self.msk1 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
+        self.atlas = self.atlas0
 
-        # 3.2 --------------------------------------------------------------------
+        # 3.2 to 5.2 ------------------------------------------------------------
         print("Starting Aligner...")
         brain_aligner = BrainAligner(self.mri2, self.atlas)
         brain_aligner.execute()
         self.atlas = sitk.Resample(self.atlas, brain_aligner.transform)
 
-        # 4.2 --------------------------------------------------------------------
         print("Starting Registration...")
         self.generate_mask()
         self.register_atlas(self.mri2)
         check_registration(self.mri2, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
-        # 5.2 --------------------------------------------------------------------
         self.msk2 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
+        self.atlas = self.atlas0
 
         # 6. --------------------------------------------------------------------
         self.register_mri()
@@ -246,8 +244,4 @@ class BrainRegisterer:
         elastixImageFilter.SetMovingMask(self.msk2)
         elastixImageFilter.Execute()
         self.mri2 = elastixImageFilter.GetResultImage()
-
-    def subtract_mri(self):
-
-        sitk.Subtract(self.mri0, self.mri1)
 
