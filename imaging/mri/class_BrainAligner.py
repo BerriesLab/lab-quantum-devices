@@ -29,12 +29,8 @@ class BrainAligner:
         self.click2 = None
 
         # initialize slice
-        self.i0 = fix_img.GetSize()[0] // 2
-        self.j0 = fix_img.GetSize()[1] // 2
-        self.k0 = fix_img.GetSize()[2] // 2
-        self.l0 = mov_img.GetSize()[0] // 2
-        self.m0 = mov_img.GetSize()[1] // 2
-        self.n0 = mov_img.GetSize()[2] // 2
+        self.i0, self.j0, self.k0 = self.get_center_of_mass(self.fix_img)
+        self.l0, self.m0, self.n0 = self.get_center_of_mass(self.mov_img)
 
         # current and previous_ slice index
         self.i = self.i0
@@ -47,11 +43,6 @@ class BrainAligner:
         # delta for alignment
         self.delta_ijk = 0
         self.delta_lmn = 0
-        # Note for the calculation of the final transformation
-        # lmn1 = lmn0 + delta_lmn
-        # ijk1 = ijk0 + delta_ijk
-        # lmn1 - ijk1 = (lmn0 + delta_lmn)- (ijk0 + delta_ijk) = delta_lmn - delta_ijk
-        # since lmn0 = ijk0
 
         # Transformation
         self.transform = None
@@ -65,8 +56,7 @@ class BrainAligner:
         Note: this is the only solution that keeps the fixed image in its starting position."""
         # plot slices passing through the image volume center
         self.create_figure()
-        self.update_figure(np.array(self.fix_img.GetSize(), dtype=int) // 2,
-                           np.array(self.mov_img.GetSize(), dtype=int) // 2)
+        self.update_figure([self.i0, self.j0, self.k0], [self.l0, self.m0, self.n0])
         print("Left-click to mark images center.\n"
               "Right-click to align.\n"
               "Press Up/Down keys to up/down-scale brian atlas.\n"
@@ -277,7 +267,7 @@ class BrainAligner:
         self.ax[1, 1].lines[1].set_xdata(+l * self.mov_img.GetSpacing()[0])
 
         # Update moving image - yz plane
-        mov_img_yz_slice = sitk.Extract(self.mov_img, [0, self.fix_img.GetSize()[1], self.mov_img.GetSize()[2]], [l, 0, 0])
+        mov_img_yz_slice = sitk.Extract(self.mov_img, [0, self.mov_img.GetSize()[1], self.mov_img.GetSize()[2]], [l, 0, 0])
         self.ax[1, 2].images[0].set_array(sitk.GetArrayFromImage(mov_img_yz_slice))
         self.ax[1, 2].lines[0].set_ydata(-n * self.mov_img.GetSpacing()[2])
         self.ax[1, 2].lines[1].set_xdata(+m * self.mov_img.GetSpacing()[1])
@@ -345,21 +335,26 @@ class BrainAligner:
                 print("Aligning images")
 
                 # Get coordinates in physical space
-                target = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k]))
-                origin = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
+                ijk0 = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.i0, self.j0, self.k0]))
+                ijk = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.i, self.j, self.k]))
+                lmn0 = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l0, self.m0, self.n0]))
+                lmn = np.array(self.mov_img.TransformIndexToPhysicalPoint([self.l, self.m, self.n]))
 
                 # calculate transformation
+                # ijk = lmn0 + delta_lmn + delta
+                # delta_lmn = lmn - lmn0
+                # delta = ikj - lmn
+                # offset = ijk - lmn0 = delta_lmn  + delta
+                delta_lmn = lmn - lmn0
+                delta = ijk - lmn
+                offset = delta_lmn + delta
                 self.transform = sitk.TranslationTransform(3)
-                self.transform.SetOffset(-(target - origin))
+                self.transform.SetOffset(-offset)
                 self.mov_img = sitk.Resample(self.mov_img,
                                              transform=self.transform,
                                              interpolator=sitk.sitkLinear,
                                              defaultPixelValue=0,
                                              outputPixelType=self.mov_img.GetPixelIDValue())
-
-                self.delta_lmn = self.mov_img.TransformIndexToPhysicalPoint([self.l - self.l0, self.m - self.m0, self.n - self.n0])
-                self.delta_ijk = self.mov_img.TransformIndexToPhysicalPoint([self.i - self.i0, self.j - self.j0, self.k - self.k0])
-                self.transform.SetOffset([y - x for (x, y) in zip(self.delta_ijk, self.delta_lmn)])
 
                 # After translation, the centers of the moving images coincides with the center of the fixed image.
                 # Therefore, the slices of the moving image to show are now passing through the new center (l,m,n) = (i,j,k).
@@ -431,6 +426,17 @@ class BrainAligner:
             self.transform = transform
         else:
             self.transform = sitk.CompositeTransform([self.transform, transform])
+
+    def get_center_of_mass(self, img: sitk.Image):
+        binary = sitk.BinaryThreshold(img, 0.1, np.inf, 1, 0)
+        stats = sitk.LabelStatisticsImageFilter()
+        stats.Execute(binary, binary)
+        bbox = stats.GetBoundingBox(1)
+        # Calculate the center of the bounding box
+        center_x = int((bbox[1] + bbox[0]) / 2)
+        center_y = int((bbox[3] + bbox[2]) / 2)
+        center_z = int((bbox[5] + bbox[4]) / 2)
+        return [center_x, center_y, center_z]
 
     # def update_slice_index(self):
     #     self.i = self.i_

@@ -14,18 +14,26 @@ class BrainRegisterer:
 
         self.patient_id = patient_id
 
+        # Initialize images
         self.mri0 = mri0  # T1w
         self.mri1 = mri1  # T1wC0.5
         self.mri2 = mri2  # T1wC1.0
-        self.atlas = atlas
+        self.atlas = atlas  # Brain Atlas
+        self.mri2_0 = None  # MRI subtraction: mri2 - mri0
+        self.mri1_0 = None  # MRI subtraction: mri1 - mri0
 
+        # Initialize the Region of Interest for data visualization
+        self.roi_mri0 = sitk.RegionOfInterestImageFilter()
+        self.roi_mri1 = sitk.RegionOfInterestImageFilter()
+        self.roi_mri2 = sitk.RegionOfInterestImageFilter()
+        self.roi_atlas = sitk.RegionOfInterestImageFilter()
+
+        # Initialize masks for registration
         self.msk0 = None
         self.msk1 = None
         self.msk2 = None
 
-        self.mri2_0 = None  # mri2 - mri0
-        self.mri1_0 = None  # mri1 - mri0
-
+        # Characteristics of common physical space
         self.origin = [0, 0, 0]
         self.spacing = [0.2, 0.2, 0.8]
         self.direction = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float).flatten()
@@ -39,7 +47,7 @@ class BrainRegisterer:
         """
         The registration consists in the following five steps:
 
-        1. Rescale intensity of fixed and moving image in the range [0, 1], and resample the moving image to the fixed image
+        1. Rescale intensity of fixed and moving image in the range [0, 1], and resample the moving image to the fixed image (the largest MRI)
         with a 3D affine transformation. The resulting moving image has same spacings, origin and direction cosines as the fixed image,
         i.e. the fixed and moving image now share the same space.
 
@@ -58,21 +66,34 @@ class BrainRegisterer:
         """
 
         # 1 --------------------------------------------------------------------
-        self.atlas = self.project_img_in_custom_space(self.atlas)
+        output_size_mri0 = np.array(self.mri0.GetSize()) * np.array(self.mri0.GetSpacing() / np.array(self.spacing))
+        output_size_mri1 = np.array(self.mri1.GetSize()) * np.array(self.mri1.GetSpacing() / np.array(self.spacing))
+        output_size_mri2 = np.array(self.mri2.GetSize()) * np.array(self.mri2.GetSpacing() / np.array(self.spacing))
+        output_size_atlas = np.array(self.atlas.GetSize()) * np.array(self.atlas.GetSpacing() / np.array(self.spacing))
+        self.size = [int(max(x)) for x in zip(output_size_mri0, output_size_mri1, output_size_mri2, output_size_atlas)]
+
         self.mri0 = self.project_img_in_custom_space(self.mri0)
         self.mri1 = self.project_img_in_custom_space(self.mri1)
         self.mri2 = self.project_img_in_custom_space(self.mri2)
+        self.atlas = self.project_img_in_custom_space(self.atlas)
 
         print(f"T1w - New Direction Cosines: {self.mri0.GetDirection()}\n"
               f"T1w - New Origin: {self.mri0.GetOrigin()}\n"
-              f"1/2T1w - New Direction Cosines: {self.mri1.GetDirection()}\n"
-              f"1/2T1w - New Origin: {self.mri1.GetOrigin()}\n"
-              f"1T1w - New Direction Cosines: {self.mri2.GetDirection()}\n"
-              f"1T1w - New Origin: {self.mri2.GetOrigin()}\n"
-              f"1/2T1w - New Direction Cosines: {self.mri1.GetDirection()}\n"
-              f"1/2T1w - New Origin: {self.mri1.GetOrigin()}\n"
+              f"T1w - New Size: {self.mri0.GetSize()}\n"
+              f"T1w - New Spacing: {self.mri0.GetSpacing()}\n"
+              f"T1wC0.5 - New Direction Cosines: {self.mri1.GetDirection()}\n"
+              f"T1wC0.5 - New Origin: {self.mri1.GetOrigin()}\n"
+              f"T1wC0.5 - New Size: {self.mri1.GetSize()}\n"
+              f"T1wC0.5 - New Spacing: {self.mri1.GetSpacing()}\n"
+              f"T1wC1.0 - New Direction Cosines: {self.mri2.GetDirection()}\n"
+              f"T1wC1.0 - New Origin: {self.mri2.GetOrigin()}\n"
+              f"T1wC1.0 - New Size: {self.mri2.GetSize()}\n"
+              f"T1wC1.0 - New Spacing: {self.mri2.GetSpacing()}\n"
               f"atlas - New Direction Cosines: {self.atlas.GetDirection()}\n"
-              f"atlas - New Origin: {self.atlas.GetOrigin()}\n")
+              f"atlas - New Origin: {self.atlas.GetOrigin()}\n"
+              f"atlas - New Size: {self.atlas.GetSize()}\n"
+              f"atlas - New Spacing: {self.atlas.GetSpacing()}\n"
+              )
 
         # 2 --------------------------------------------------------------------
         print("Matching Histograms... ", end="")
@@ -87,6 +108,7 @@ class BrainRegisterer:
         brain_aligner = BrainAligner(self.mri0, self.atlas)
         brain_aligner.execute()
         self.atlas = sitk.Resample(self.atlas, brain_aligner.transform)
+        check_registration(self.mri0, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
 
         # 4.0 --------------------------------------------------------------------
         print("Starting Registration...")
