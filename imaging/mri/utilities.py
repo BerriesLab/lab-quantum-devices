@@ -88,6 +88,16 @@ def custom_colormap(vmin=0, vmax=1):
     return LinearSegmentedColormap.from_list("custom_jet", jet_colors, n)
 
 
+def custom_colormap_for_contrast(vmin=-1, vmax=1):
+    # Create a custom colormap based on "bwr"
+    cmap_jet = plt.colormaps.get_cmap("bwr")
+    n = 256  # Number of values in the colormap
+    jet_colors = cmap_jet(np.linspace(vmin, vmax, n))
+    # Set alpha channel to 0 where the value is 0
+    jet_colors[:, 3] = np.where(np.linspace(vmin, vmax, n) == 0, 0, 0.5)
+    return LinearSegmentedColormap.from_list("custom_jet", jet_colors, n)
+
+
 def custom_colormap_for_mask():
     # Define the colors and corresponding values
     colors = np.array([(0, 0, 0, 0), (0.8, 0, 0, 0.5)])  # (R, G, B, Alpha)
@@ -110,8 +120,9 @@ def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, mask: sitk.Imag
     j0 = slice[1] - (delta_slice[1] * n_slice) // 2
     k0 = slice[2] - (delta_slice[2] * n_slice) // 2
 
-    fig, ax = plt.subplots(n_slice, 3)
+    fig, ax = plt.subplots(n_slice, 3)  # in cm
     ax = ax.flatten()
+
     for t, idx in enumerate(np.linspace(0, n_slice + 3, 3, dtype=int)):
 
         i = int(i0 + delta_slice[0] * idx)
@@ -133,43 +144,39 @@ def check_registration(fix_img: sitk.Image, mov_img: sitk.Image, mask: sitk.Imag
         extract_sagittal_section(ax[idx + 2], mov_img, i, custom_colormap())
         extract_sagittal_section(ax[idx + 2], mask, i, custom_colormap_for_mask()) if isinstance(mask, sitk.Image) else None
 
-        t += 1
-
     plt.tight_layout()
-    plt.show()
+    return fig, ax
 
 
-def check_contrast(img1: sitk.Image, img2: sitk.Image, idx):
+def check_contrast(img: sitk.Image, cnt: sitk.Image, slice, delta_slice, n_slice):
 
-    i = idx[0]
-    j = idx[1]
-    k = idx[2]
+    # Calculate initial slice
+    i0 = slice[0] - (delta_slice[0] * n_slice) // 2
+    j0 = slice[1] - (delta_slice[1] * n_slice) // 2
+    k0 = slice[2] - (delta_slice[2] * n_slice) // 2
 
-    fig, ax = plt.subplots(3, 3)
+    fig, ax = plt.subplots(n_slice, 3)  # in cm
     ax = ax.flatten()
 
-    ax[0].set_title("xy - axial") if idx == 0 else None
-    extract_axial_section(ax[0], img1, k, "gray")
+    for t, idx in enumerate(np.linspace(0, n_slice + 3, 3, dtype=int)):
+        i = int(i0 + delta_slice[0] * idx)
+        j = int(j0 + delta_slice[0] * idx)
+        k = int(k0 + delta_slice[0] * idx)
 
-    ax[1].set_title("xz - coronal") if idx == 0 else None
-    extract_coronal_section(ax[1], img1, j, "gray")
+        ax[idx + 0].set_title("xy - axial") if idx == 0 else None
+        extract_axial_section(ax[idx + 0], img, k, "gray")
+        extract_axial_section(ax[idx + 0], cnt, k, custom_colormap_for_contrast())
 
-    ax[2].set_title("yz - sagittal") if idx == 0 else None
-    extract_sagittal_section(ax[2], img1, i, "gray")
+        ax[idx + 1].set_title("xz - coronal") if idx == 0 else None
+        extract_coronal_section(ax[idx + 1], img, j, "gray")
+        extract_coronal_section(ax[idx + 1], cnt, j, custom_colormap_for_contrast())
 
-    extract_axial_section(ax[3], img2, k, "gray")
-    extract_coronal_section(ax[4], img2, j, "gray")
-    extract_sagittal_section(ax[5], img2, i, "gray")
-
-    img_sub = sitk.Subtract(img2, img1)
-    img_sub = rescale_intensity_zscore([img_sub])[0]
-
-    extract_axial_section(ax[6], img_sub, k, "seismic")
-    extract_coronal_section(ax[7], img_sub, j, "seismic")
-    extract_sagittal_section(ax[8], img_sub, i, "seismic")
+        ax[idx + 2].set_title("yz - sagittal") if idx == 0 else None
+        extract_sagittal_section(ax[idx + 2], img, i, "gray")
+        extract_sagittal_section(ax[idx + 2], cnt, i, custom_colormap_for_contrast())
 
     plt.tight_layout()
-    plt.show()
+    return fig, ax
 
 
 def rescale_intensity_zscore(img: sitk.Image or list[sitk.Image]):
@@ -187,4 +194,3 @@ def rescale_intensity_zscore(img: sitk.Image or list[sitk.Image]):
         img[idx] = val
 
     return img
-

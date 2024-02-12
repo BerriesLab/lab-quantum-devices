@@ -1,7 +1,10 @@
+import os.path
+
 import SimpleITK as sitk
+import matplotlib.pyplot as plt
 import numpy as np
 from class_BrainAligner import BrainAligner
-from utilities import check_registration
+from utilities import check_registration, check_contrast
 
 
 class BrainRegisterer:
@@ -40,9 +43,13 @@ class BrainRegisterer:
         self.direction = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float).flatten()
         self.size = [512, 512, 128]
 
+        # Attributes for Registration Boundaries
         self.mask = None
         self.mask_contour = None
         self.d = d  # the dilation radius to constrain the elastic registration (in mm)
+
+        # Paths
+        self.path = "E:/2021_local_data/2023_Gd_synthesis/dataset"
 
     def execute(self):
         """
@@ -114,6 +121,8 @@ class BrainRegisterer:
         self.generate_mask()
         self.register_atlas(self.mri0)
         check_registration(self.mri0, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
+        plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.0 atlas registration.png"), dpi=600)
+        plt.close()
 
         print(f"Generating Brain Mask for Patient {self.patient_id}")
         self.msk0 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
@@ -129,6 +138,8 @@ class BrainRegisterer:
         self.generate_mask()
         self.register_atlas(self.mri1)
         check_registration(self.mri1, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
+        plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.5 atlas registration.png"), dpi=600)
+        plt.close()
 
         self.msk1 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
         self.atlas = self.atlas0
@@ -143,26 +154,40 @@ class BrainRegisterer:
         self.generate_mask()
         self.register_atlas(self.mri2)
         check_registration(self.mri2, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
+        plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC1.0 atlas registration.png"), dpi=600)
+        plt.close()
 
         self.msk2 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
         self.atlas = self.atlas0
 
         # 6. --------------------------------------------------------------------
         self.register_mri()
+        check_registration(self.mri0, self.mri1, None, [int(x // 2) for x in self.mri0.GetSize()], [10, 10, 5], 3)
+        plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.5 T1wRC0.0 registration.png"), dpi=600)
+        plt.close()
+        check_registration(self.mri0, self.mri2, None, [int(x // 2) for x in self.mri0.GetSize()], [10, 10, 5], 3)
+        plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC1.0 T1wRC0.0 registration.png"), dpi=600)
+        plt.close()
 
         # 7. --------------------------------------------------------------------
-        self.mri2_0 = sitk.Subtract(self.mri2, self.mri0)
         self.mri1_0 = sitk.Subtract(self.mri1, self.mri0)
+        check_contrast(self.mri0, self.mri1_0, [int(x // 2) for x in self.mri1_0.GetSize()], [10, 10, 5], 3)
+        plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRDC0.5.png"), dpi=600)
+        plt.close()
+        self.mri2_0 = sitk.Subtract(self.mri2, self.mri0)
+        check_contrast(self.mri0, self.mri2_0, [int(x // 2) for x in self.mri2_0.GetSize()], [10, 10, 5], 3)
+        plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRDC1.0.png"), dpi=600)
+        plt.close()
 
         # 8. --------------------------------------------------------------------
-        sitk.WriteImage(self.mri0, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wR.nii.gz")
-        sitk.WriteImage(self.msk0, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wR.msk.nii.gz")
-        sitk.WriteImage(self.mri1, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wC0.5R.nii.gz")
-        sitk.WriteImage(self.msk1, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wC0.5R.msk.nii.gz")
-        sitk.WriteImage(self.mri2, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wC1.0R.nii.gz")
-        sitk.WriteImage(self.msk2, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wC1.0R.msk.nii.gz")
-        sitk.WriteImage(self.mri1_0, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wC0.5RD.nii.gz")
-        sitk.WriteImage(self.mri2_0, f"E:/2021_local_data/2023_Gd_synthesis/tests/{self.patient_id}_T1wC1.0RD.nii.gz")
+        sitk.WriteImage(self.mri0, os.path.join(self.path, f"{self.patient_id} T1wRC0.0.nii"))
+        sitk.WriteImage(self.msk0, os.path.join(self.path, f"{self.patient_id} T1wRC0.0.msk.nii"))
+        sitk.WriteImage(self.mri1, os.path.join(self.path, f"{self.patient_id} T1wRC0.5.nii"))
+        sitk.WriteImage(self.msk1, os.path.join(self.path, f"{self.patient_id} T1wRC0.5.msk.nii"))
+        sitk.WriteImage(self.mri2, os.path.join(self.path, f"{self.patient_id} T1wRC1.0.nii"))
+        sitk.WriteImage(self.msk2, os.path.join(self.path, f"{self.patient_id} T1wRC1.0.msk.nii"))
+        sitk.WriteImage(self.mri1_0, os.path.join(self.path, f"{self.patient_id} T1wRDC0.5.nii"))
+        sitk.WriteImage(self.mri2_0, os.path.join(self.path, f"{self.patient_id} T1wRDC1.0.nii"))
 
     def project_img_in_custom_space(self, img):
         """This method rescale the intensity in the range [0, 1], and then project the passed image in the physical space

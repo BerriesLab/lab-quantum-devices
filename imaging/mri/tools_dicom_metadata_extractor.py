@@ -58,8 +58,6 @@ for group in groups:
                             "direction": cosines_to_patient([x for x in metadata.ImageOrientationPatient]) if "ImageOrientationPatient" in metadata else None,
                             "magnetic field strength": metadata.MagneticFieldStrength if "MagneticFieldStrength" in metadata else None,
                             "manufacturer model": (metadata.Manufacturer if "Manufacturer" in metadata else None, metadata.ManufacturerModelName if "ManufacturerModelName" in metadata else None),
-
-                            "dataset": None,
                             }
                     data = pd.Series(data)
                     df.append(data)
