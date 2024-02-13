@@ -194,3 +194,32 @@ def rescale_intensity_zscore(img: sitk.Image or list[sitk.Image]):
         img[idx] = val
 
     return img
+
+
+def get_center_of_mass(img: sitk.Image):
+    """
+    Compute the center of mass of a SimpleITK image.
+
+    Parameters:
+    - image (sitk.Image): The input image.
+
+    Returns:
+    - tuple: A tuple containing the center of mass coordinates in the physical space.
+    """
+
+    # Get total mass
+    img_array = sitk.GetArrayFromImage(img)
+    m = np.sum(img_array)
+
+    # Calculate the weighted average of coordinates
+    ijk = np.indices(img_array.shape)
+    ijk0 = np.array(img.GetOrigin())
+
+    # sum vector from physical origin to voxel (0, 0, 0), with vector that goes from voxel (0, 0, 0) to voxel (i, j, k)
+    v_0 = np.array(img.TransformIndexToPhysicalPoint(ijk[:, 0, 0, 0].tolist())) - ijk0
+    v_ijk = v_0 + ijk.transpose(1, 2, 3, 0) * np.array(img.GetSpacing())
+
+    # Calculate momentum (with respect to physical origin)
+    cm = np.sum(v_ijk * img_array[..., np.newaxis] / m, axis=(0, 1, 2))
+
+    return tuple(cm)

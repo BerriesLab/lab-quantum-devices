@@ -8,13 +8,13 @@ patient_id = 2246881  # cannot identify MRIs
 patient_id = 2312203  # no MRI brain
 patient_id = 2370557
 patient_id = 2387681
-patient_id = 2413454  # Registration problem
 patient_id = 2415056  # cannot identify MRIs
 patient_id = 2415148
 patient_id = 2415654
 patient_id = 2415781
 patient_id = 2416015
 patient_id = 2416660
+patient_id = 2413454  # Registration problem
 
 # Load data (brain atlas, database...)
 atlas = sitk.ReadImage("E:/2021_local_data/2023_Gd_synthesis/atlas/Johnson et al 2019 Canine Atlas v2/Canine_population_template.nii.gz")
