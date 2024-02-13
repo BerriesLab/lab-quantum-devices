@@ -122,6 +122,7 @@ class BrainRegisterer:
         self.register_atlas(self.mri0)
         check_registration(self.mri0, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.0 atlas registration.png"), dpi=600)
+        plt.show()
         plt.close()
 
         print(f"Generating Brain Mask for Patient {self.patient_id}")
@@ -139,6 +140,7 @@ class BrainRegisterer:
         self.register_atlas(self.mri1)
         check_registration(self.mri1, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.5 atlas registration.png"), dpi=600)
+        plt.show()
         plt.close()
 
         self.msk1 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
@@ -155,6 +157,7 @@ class BrainRegisterer:
         self.register_atlas(self.mri2)
         check_registration(self.mri2, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC1.0 atlas registration.png"), dpi=600)
+        plt.show()
         plt.close()
 
         self.msk2 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
@@ -164,19 +167,23 @@ class BrainRegisterer:
         self.register_mri()
         check_registration(self.mri0, self.mri1, None, [int(x // 2) for x in self.mri0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.5 T1wRC0.0 registration.png"), dpi=600)
+        plt.show()
         plt.close()
         check_registration(self.mri0, self.mri2, None, [int(x // 2) for x in self.mri0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC1.0 T1wRC0.0 registration.png"), dpi=600)
+        plt.show()
         plt.close()
 
         # 7. --------------------------------------------------------------------
         self.mri1_0 = sitk.Subtract(self.mri1, self.mri0)
         check_contrast(self.mri0, self.mri1_0, [int(x // 2) for x in self.mri1_0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRDC0.5.png"), dpi=600)
+        plt.show()
         plt.close()
         self.mri2_0 = sitk.Subtract(self.mri2, self.mri0)
         check_contrast(self.mri0, self.mri2_0, [int(x // 2) for x in self.mri2_0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRDC1.0.png"), dpi=600)
+        plt.show()
         plt.close()
 
         # 8. --------------------------------------------------------------------
