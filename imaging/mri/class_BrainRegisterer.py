@@ -4,7 +4,7 @@ import SimpleITK as sitk
 import matplotlib.pyplot as plt
 import numpy as np
 from class_BrainAligner import BrainAligner
-from utilities import check_registration, check_contrast
+from utilities import *
 
 
 class BrainRegisterer:
@@ -122,7 +122,7 @@ class BrainRegisterer:
         self.register_atlas(self.mri0)
         check_registration(self.mri0, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.0 atlas registration.png"), dpi=600)
-        plt.show()
+        # plt.show()
         plt.close()
 
         print(f"Generating Brain Mask for Patient {self.patient_id}")
@@ -140,7 +140,7 @@ class BrainRegisterer:
         self.register_atlas(self.mri1)
         check_registration(self.mri1, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.5 atlas registration.png"), dpi=600)
-        plt.show()
+        # plt.show()
         plt.close()
 
         self.msk1 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
@@ -157,7 +157,7 @@ class BrainRegisterer:
         self.register_atlas(self.mri2)
         check_registration(self.mri2, self.atlas, self.mask_contour, [brain_aligner.i, brain_aligner.j, brain_aligner.k], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC1.0 atlas registration.png"), dpi=600)
-        plt.show()
+        # plt.show()
         plt.close()
 
         self.msk2 = sitk.BinaryThreshold(self.atlas, lowerThreshold=0.001, insideValue=1)
@@ -167,24 +167,25 @@ class BrainRegisterer:
         self.register_mri()
         check_registration(self.mri0, self.mri1, None, [int(x // 2) for x in self.mri0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC0.5 T1wRC0.0 registration.png"), dpi=600)
-        plt.show()
         plt.close()
         check_registration(self.mri0, self.mri2, None, [int(x // 2) for x in self.mri0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRC1.0 T1wRC0.0 registration.png"), dpi=600)
-        plt.show()
         plt.close()
 
         # 7. --------------------------------------------------------------------
         self.mri1_0 = sitk.Subtract(self.mri1, self.mri0)
+        sitk.WriteImage(self.mri1_0, os.path.join(self.path, f"{self.patient_id} T1wRDC0.5.nii"))
         check_contrast(self.mri0, self.mri1_0, [int(x // 2) for x in self.mri1_0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRDC0.5.png"), dpi=600)
-        plt.show()
         plt.close()
+        del self.mri1_0
+
         self.mri2_0 = sitk.Subtract(self.mri2, self.mri0)
+        sitk.WriteImage(self.mri2_0, os.path.join(self.path, f"{self.patient_id} T1wRDC1.0.nii"))
         check_contrast(self.mri0, self.mri2_0, [int(x // 2) for x in self.mri2_0.GetSize()], [10, 10, 5], 3)
         plt.savefig(os.path.join(self.path, f"{self.patient_id} T1wRDC1.0.png"), dpi=600)
-        plt.show()
         plt.close()
+        del self.mri2_0
 
         # 8. --------------------------------------------------------------------
         sitk.WriteImage(self.mri0, os.path.join(self.path, f"{self.patient_id} T1wRC0.0.nii"))
@@ -193,8 +194,8 @@ class BrainRegisterer:
         sitk.WriteImage(self.msk1, os.path.join(self.path, f"{self.patient_id} T1wRC0.5.msk.nii"))
         sitk.WriteImage(self.mri2, os.path.join(self.path, f"{self.patient_id} T1wRC1.0.nii"))
         sitk.WriteImage(self.msk2, os.path.join(self.path, f"{self.patient_id} T1wRC1.0.msk.nii"))
-        sitk.WriteImage(self.mri1_0, os.path.join(self.path, f"{self.patient_id} T1wRDC0.5.nii"))
-        sitk.WriteImage(self.mri2_0, os.path.join(self.path, f"{self.patient_id} T1wRDC1.0.nii"))
+
+
 
     def project_img_in_custom_space(self, img):
         """This method rescale the intensity in the range [0, 1], and then project the passed image in the physical space
@@ -258,7 +259,23 @@ class BrainRegisterer:
 
     def register_mri(self):
         """This method register the mri1 and mri2 to mri0, using their masks to limit the registration to the
-        actual brain volume."""
+        actual brain volume. To initialize the registration, the center of mass of mr1 and mr2 image are aligned
+        to the center of mass of mri0."""
+
+        # Get brain masks' center of mass
+        cm0 = get_center_of_mass(self.msk0)
+        cm1 = get_center_of_mass(self.msk1)
+        cm2 = get_center_of_mass(self.msk2)
+        # Calculate transformation offset
+        offset10 = cm1 - cm0
+        offset20 = cm2 - cm0
+        # Align (transform) masks and MRI images
+        self.mri1 = transform_translate_rigid(self.mri1, offset10.tolist())
+        self.msk1 = transform_translate_rigid(self.msk1, offset10.tolist())
+        self.mri2 = transform_translate_rigid(self.mri2, offset20.tolist())
+        self.msk2 = transform_translate_rigid(self.msk2, offset20.tolist())
+
+        # Register MRI1 to MRI0
         elastixImageFilter = sitk.ElastixImageFilter()
         elastixImageFilter.SetFixedImage(self.mri0)
         elastixImageFilter.SetMovingImage(self.mri1)
@@ -268,6 +285,11 @@ class BrainRegisterer:
         elastixImageFilter.Execute()
         self.mri1 = elastixImageFilter.GetResultImage()
 
+        # Transform msk1 to match the position of registered MRI1
+        parameters = elastixImageFilter.GetTransformParameterMap()
+        self.msk1 = sitk.Transformix(self.msk1, parameters)
+
+        # Register MRI2 to MRI0
         elastixImageFilter = sitk.ElastixImageFilter()
         elastixImageFilter.SetFixedImage(self.mri0)
         elastixImageFilter.SetMovingImage(self.mri2)
@@ -276,4 +298,8 @@ class BrainRegisterer:
         elastixImageFilter.SetMovingMask(self.msk2)
         elastixImageFilter.Execute()
         self.mri2 = elastixImageFilter.GetResultImage()
+
+        # Transform msk1 to match the position of registered MRI1
+        parameters = elastixImageFilter.GetTransformParameterMap()
+        self.msk2 = sitk.Transformix(self.msk2, parameters)
 
