@@ -3,18 +3,18 @@ from imaging.mri.utilities import *
 from class_BrainRegisterer import BrainRegisterer
 
 patient_id = 2225172
-patient_id = 2228467  # RAM issue
 patient_id = 2246881  # cannot identify MRIs
 patient_id = 2312203  # no MRI brain
 patient_id = 2370557
 patient_id = 2387681
-#patient_id = 2413454
-#patient_id = 2415056  # cannot identify MRIs
-#patient_id = 2415148
-#patient_id = 2415654
-#patient_id = 2415781
-#patient_id = 2416015
-#patient_id = 2416660
+patient_id = 2413454
+patient_id = 2415056  # cannot identify MRIs
+patient_id = 2415148
+patient_id = 2415654
+patient_id = 2415781
+patient_id = 2416015
+patient_id = 2416660
+patient_id = 2228467  # RAM issue
 
 
 # Load data (brain atlas, database...)
