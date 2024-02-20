@@ -1,44 +1,84 @@
 from tkinter import *
 from tkinter import ttk
+import pandas as pd
 
 
 class BrainAlignerGUI:
 
     def __init__(self, root):
 
-        self.root = root
+        root.title("Brain Register")
+
+        # Create outer PanedWindow oriented vertically
+        outer_paned_window = ttk.Panedwindow(root, orient=HORIZONTAL)
+        outer_paned_window.pack(fill=BOTH, expand=True, padx=10, pady=10)
+
+        # Create inner PanedWindows
+        inner_paned_window1 = ttk.PanedWindow(outer_paned_window, orient=VERTICAL)
+        inner_paned_window2 = ttk.PanedWindow(outer_paned_window, orient=VERTICAL)
+
+        # Add inner PanedWindows to outer PanedWindow
+        outer_paned_window.add(inner_paned_window1, weight=1)
+        outer_paned_window.add(inner_paned_window2, weight=1)
 
         # Create frames
-        self.frame1 = ttk.Frame(root).config(width=1000, height=1000, relief="RIDGE")  # Images
-        self.frame2 = ttk.Frame(root).config(width=200, height=500, relief="RIDGE")  # Buttons
-        self.frame3 = ttk.Frame(root).config(width=200, height=500, relief="RIDGE")  # Log
+        frame1 = ttk.Frame(inner_paned_window1)
+        frame1.config(width=500, height=500, relief=RIDGE)  # Images
+        frame2 = ttk.Frame(inner_paned_window2)
+        frame2.config(width=200, height=250, relief=RIDGE)  # Buttons
+        frame3 = ttk.Frame(inner_paned_window2)
+        frame3.config(width=200, height=250, relief=RIDGE)  # Log
 
-        # Place frames using the grid layout manager
-        self.frame1.grid(row=0, column=0, rowspan=2, sticky="nsew")
-        self.frame2.grid(row=0, column=1, sticky="nsew")
-        self.frame3.grid(row=1, column=1, sticky="nsew")
-
-        # Configure row and column weights to make the frames resize properly
-        self.root.grid_rowconfigure(0, weight=1)
-        self.root.grid_rowconfigure(1, weight=1)
-        self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_columnconfigure(1, weight=1)
-
-        # Frame0 contains the plots
-        self.frame0 = ttk.Frame(master).config(height=1000, width=1000, relief="RIDGE")
+        # Add frames to inner PanedWindow
+        inner_paned_window1.add(frame1)
+        inner_paned_window2.add(frame2)
+        inner_paned_window2.add(frame3)
 
         # Frame1 contains the buttons to control the application execution
-        self.frame1 = ttk.Frame(master).config(relief="RIDGE")
-        ttk.Button(self.frame1, text="Load", command=self.load_data()).grid(row=0, column=0)
-        ttk.Button(self.frame1, text="Register Atlas", command=self.register_atlas()).grid(row=1, column=0)
-        ttk.Button(self.frame1, text="Register MRIs", command=self.register_mris()).grid(row=2, column=0)
-        ttk. #  to set the radius of the brain mask constraint
+        self.button_load = ttk.Button(frame2, text="Load", command=self.load_data())
+        self.button_load.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        self.button_reg_atlat = ttk.Button(frame2, text="Register Atlas", command=self.register_atlas())
+        self.button_reg_atlat.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        self.button_reg_mri = ttk.Button(frame2, text="Register MRIs", command=self.register_mris())
+        self.button_reg_mri.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        #ttk. #  to set the radius of the brain mask constraint
+
+        # Create a Treeview widget to display the data
+        self.tree = ttk.Treeview(inner_paned_window2)
+        self.tree.pack(fill='both', expand=True)
+
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(root, orient='vertical', command=self.tree.yview)
+        scrollbar.pack(side='right', fill='y')
+        self.tree.configure(yscroll=scrollbar.set)
+
+        # Load and display the Excel file
+        self.load_database("/Users/berri/Medical Imaging/mri/database.csv")
+
+    def load_database(self, filename):
+        try:
+            # Read Excel file into a pandas DataFrame
+            df = pd.read_csv(filename, sep=";")
+
+            # Display column names as headings in the Treeview
+            self.tree["columns"] = list(df.columns)
+            for column in df.columns:
+                self.tree.heading(column, text=column)
+
+            # Insert data rows into the Treeview
+            for index, row in df.iterrows():
+                self.tree.insert("", "end", text=index, values=list(row))
+
+        except Exception as e:
+            print("Error loading Excel file:", e)
 
     def register_atlas(self):
-        self.label.config(text="Uno")
+        return None
+        #self.label.config(text="Uno")
 
     def register_mris(self):
-        self.label.config(text="Eins")
+        return None
+        #self.label.config(text="Eins")
 
     def load_data(self):
         print("wip")

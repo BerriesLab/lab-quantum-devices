@@ -214,4 +214,3 @@ def transform_translate_rigid(img: sitk.Image, offset):
                         defaultPixelValue=0,
                         outputPixelType=img.GetPixelIDValue())
     return img
-

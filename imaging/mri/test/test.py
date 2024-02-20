@@ -6,7 +6,7 @@ from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd,
 from monai.losses.ssim_loss import SSIMLoss
 from monai.metrics.regression import SSIMMetric
 from monai.metrics import PSNRMetric, MAEMetric, MSEMetric
-from imaging.mri.class_brain import *
+from imaging.mri.class_BrainLearn import *
 
 
 # 1. DATA PRE-PROCESSING
