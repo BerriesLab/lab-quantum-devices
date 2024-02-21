@@ -13,8 +13,8 @@ bl.build_dataset()
 bl.set_roi()
 
 bl.compose_transforms_trn()
-bl.compose_transforms_val()
-bl.compose_transforms_tst()
+#bl.compose_transforms_val()
+#bl.compose_transforms_tst()
 
 bl.cache_dataset_trn()
 bl.cache_dataset_val()

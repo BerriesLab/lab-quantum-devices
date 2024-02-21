@@ -172,9 +172,9 @@ class BrainLearn:
     def compose_transforms_trn(self):
         """Compose the transformation for the training dataset"""
         self.transforms_trn = Compose([
-            LoadImaged(keys=["img", "msk"]),
-            EnsureChannelFirstd(keys=["img", "msk"]),
-            self.CropImageBasedOnMask(keys=["img"],),
+            LoadImaged(keys=["img1", "img2"]),
+            EnsureChannelFirstd(keys=["img1", "img2"]),
+            self.CropImageBasedOnROI(keys=["img1", "img2"], roi_size=self.roi_size),
             # SpatialCropD(keys=["img"], roi_size=, roi_start=, roi_end=),
             # AsDiscreted(
             #     keys=["lbl"], to_onehot=self.n_classes),
@@ -586,19 +586,23 @@ class BrainLearn:
         self.roi_size = np.array([roi_size_x, roi_size_y, roi_size_z]).astype(int)
 
     class CropImageBasedOnROI(Transform):
-        def __init__(self, keys: list, roi_center: np.ndarray, roi_size: np.ndarray):
+        def __init__(self, keys: list, roi_size: np.ndarray):
             super().__init__()
             self.keys = keys
-            self.roi_center = roi_center
             self.roi_size = roi_size
+            self.roi_center = self.get_roi_center()
+
+        def get_roi_center(self):
+            return None
 
         def __call__(self, data):
             # Load image
             img_path = data[self.keys[0]]
-            img = sitk.GetArrayFromImage(sitk.ReadImage(img_path))
+
+            roi_center = data[""]["roi_center"]
 
             # Crop the image based on the ROI
-            cropped_img = SpatialCropD(keys=["img"], roi_center=self.roi_center, roi_size=self.roi_size)(img)
+            cropped_img = SpatialCropD(keys=self.keys, roi_center=self.roi_center, roi_size=self.roi_size)
 
             # Update the data dictionary with the cropped image
             cropped_data = {self.keys[0]: cropped_img}
