@@ -214,3 +214,22 @@ def transform_translate_rigid(img: sitk.Image, offset):
                         defaultPixelValue=0,
                         outputPixelType=img.GetPixelIDValue())
     return img
+
+
+def closest_divisible_by_power_of_two(target: int, n: int):
+    """
+    Return the closest number to target divisible by 2 n times.
+    """
+    closest_number = None
+    min_difference = np.inf
+    num = target + 1  # Start searching from the number next to the target
+    while True:
+        if num % (2 ** n) == 0:
+            difference = num - target
+            if difference < min_difference:
+                min_difference = difference
+                closest_number = num
+                break  # Found the closest number, exit the loop
+        num += 1
+
+    return closest_number

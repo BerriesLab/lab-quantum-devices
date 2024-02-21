@@ -11,11 +11,23 @@ bl.max_iteration_trn = 1000
 bl.delta_iteration_trn = 100
 
 bl.build_dataset()
-roi_size = bl.find_roi()
-bl.compose_transforms_trn()
 
+# Find the ROI minimum size. The ROI dimensions for model training must be 2^n.
+bl.roi_set_size()
+bl.roi_expand(x=1.2)
+
+# When defining the model, make sure that the roi can be evenly divided n times, where
+# n is the number of layers of the UNet.
+
+# Compose the transforms
+bl.compose_transforms_trn()
+bl.compose_transforms_val()
+bl.compose_transforms_tst()
 # Load data (brain atlas, database...)
 
+bl.build_model_unet(num_res_units=4,
+                    channels=(64, 128, 256, 512, 1024),
+                    strides=(2, 2, 2, 2))
 
 # Register pre-contrast image
 
@@ -23,8 +35,7 @@ bl.compose_transforms_trn()
 
 wrm.get_dxdydz()
 wrm.compose_transforms_trn()
-wrm.compose_transforms_val()
-wrm.compose_transforms_tst()
+
 wrm.cache_data()
 wrm.build_model_unet(num_res_units=4,
                      channels=(64, 128, 256, 512, 1024),
