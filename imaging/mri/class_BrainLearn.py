@@ -359,7 +359,6 @@ class BrainLearn:
     def testing(self):
         """test model on a testing dataset"""
 
-
     # plot training loss vs epoch
     def plot_loss(self, show=False):
         plt.figure()
