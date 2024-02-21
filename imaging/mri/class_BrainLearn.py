@@ -8,11 +8,12 @@ import nibabel as nib
 import tqdm
 import datetime
 import SimpleITK as sitk
+from utilities import closest_divisible_by_power_of_two
 import pickle
 import pydicom
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, \
-    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD, MapTransform
+    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
@@ -49,6 +50,7 @@ class BrainLearn:
         self.optimizer = None
         self.max_iteration_trn = 100  # max iteration for training
         self.delta_iteration_trn = 1  # number of iterations in-between each validation step
+        self.roi_size = None
         # TRANSFORMATIONS
         self.intensity_min = -1.0  # min voxel intensity value, used for intensity rescaling
         self.intensity_max = 1.0  # max voxel intensity value, used for intensity rescaling
@@ -173,7 +175,8 @@ class BrainLearn:
         self.transforms_trn = Compose([
             LoadImaged(keys=["img", "msk"]),
             EnsureChannelFirstd(keys=["img", "msk"]),
-            SpatialCropD(keys=["img"], roi_size=, roi_start=, roi_end=),
+            self.CropImageBasedOnMask(keys=["img"],),
+            # SpatialCropD(keys=["img"], roi_size=, roi_start=, roi_end=),
             # AsDiscreted(
             #     keys=["lbl"], to_onehot=self.n_classes),
             # Spacingd(
@@ -226,15 +229,10 @@ class BrainLearn:
         """
 
         # Create dictionary
-        path_img = sorted(glob.glob(os.path.join("dataset", "img*.nii.gz")))
-        path_msk = sorted(glob.glob(os.path.join("dataset", "msk.nii.gz")))
-        # Currently the ROI is calculated here. In the future, it should be calculated in the data
-        # pre-processing step and provided as text file for fast loading and operation.
-        roi = []
-        for val in path_msk:
-            val = self.set_roi(val, x=1.2)
-            roi.append(val)
-        path_dic = [{"img": img, "msk": msk, "roi": roi} for img, msk, roi in zip(path_img, path_msk, roi)]
+        path_img = sorted(glob.glob(os.path.join("dataset", "**.nii")))
+        path_msk = sorted(glob.glob(os.path.join("dataset", "**.msk.nii")))
+        path_roi = sorted(glob.glob(os.path.join("dataset", "**info.txt")))
+        path_dic = [{"img": img, "msk": msk, "roi": roi} for img, msk, roi in zip(path_img, path_msk, path_roi)]
 
         # select subset of data
         if self.data_percentage < 1:
@@ -557,55 +555,51 @@ class BrainLearn:
             roi_max_size[xyz_map] = roi_size[xyz_map]
         self.roi_size = roi_max_size.astype(int)
 
-    def set_roi(self, msk, x):
-        msk = sitk.GetArrayViewFromImage(sitk.ReadImage(msk))
-        nonzero_indices = np.nonzero(msk)
-        min_coord = np.min(nonzero_indices, axis=1)
-        max_coord = np.max(nonzero_indices, axis=1)
-        # Calculate the size of the bounding box
-        roi_size = tuple(np.array(max_coord) - np.array(min_coord))
-        # Calculate the center of the bounding box
-        roi_center = tuple((np.array(min_coord) + np.array(max_coord)) / 2)
-        roi_size = np.floor(self.roi_size * x, type=int)
-        return roi_size, roi_center
-
-    def roi_expand(self, x=1.2):
+    def set_roi(self, n=5, x=1.2):
         """
-        Define a new ROI which is x times the stored ROI.
+        Get all ROI size from all information files in the dataset, and define the ROI size to use for
+        training, which must include all possible ROIs and be divisible by 2^n, where n is the number
+        of layers in the UNet model.
         """
-        self.roi_size = np.floor(self.roi_size * x, type=int)
+        roi_size = np.zeros(3)
+        for roi in {**self.dataset_trn, **self.dataset_val, **self.dataset_tst}:
+            # Read the bounding box information from the CSV file
+            with open(roi, "r") as file:
+                reader = csv.reader(file)
+                # Skip the header row
+                next(reader)
+                # Read each row containing bounding box information
+                for row in reader:
+                    bbox_c_x, bbox_c_y, bbox_c_z, bbox_s_x, bbox_s_y, bbox_s_z = row
+                    # Convert string values to integers
+                    bbox_s = np.array([int(bbox_s_x), int(bbox_s_y), int(bbox_s_z)])
+                    # Append bounding box information to the list
+                    roi_size[bbox_s > roi_size] = bbox_s[bbox_s > roi_size]
+        # Rescale the ROI
+        roi_size = np.floor(roi_size * x, type=int)
+        # Find the smallest ROI which is divisible by 2^n
+        roi_size_x = closest_divisible_by_power_of_two(roi_size[0], n)
+        roi_size_y = closest_divisible_by_power_of_two(roi_size[1], n)
+        roi_size_z = closest_divisible_by_power_of_two(roi_size[2], n)
+        roi_size = np.max(roi_size_x, roi_size_y, roi_size_z)
+        self.roi_size = np.array([roi_size, roi_size, roi_size])
 
-    class CropImageBasedOnMask(MapTransform):
-        def __init__(self, keys, mask_key, msk_scale_factor):
+    class CropImageBasedOnROI(Transform):
+        def __init__(self, keys: list, roi_center: np.ndarray, roi_size: np.ndarray):
             super().__init__()
-            self.keys = keys  # A list of keys representing the data fields to which the transformation is applied.
-            self.mask_key = mask_key  # The key of the maks
-            self.msk_scale_factor = msk_scale_factor  # The mask rescaling factor
+            self.keys = keys
+            self.roi_center = roi_center
+            self.roi_size = roi_size
 
         def __call__(self, data):
-            mask = data[self.mask_key]
-            # Calculate the bounding box coordinates by finding the minimum and maximum indices along each dimension
-            nonzero_indices = np.nonzero(mask)
-            min_coord = np.min(nonzero_indices, axis=1)
-            max_coord = np.max(nonzero_indices, axis=1)
-            # Calculate the center of the bounding box
-            bbox_c = (min_coord + max_coord) // 2
-            # Calculate the size of the bounding box after rescaling
-            bbox_s = (max_coord - min_coord) * self.msk_scale_factor
-            
+            # Load image
+            img_path = data[self.keys[0]]
+            img = sitk.GetArrayFromImage(sitk.ReadImage(img_path))
 
+            # Crop the image based on the ROI
+            cropped_img = SpatialCropD(keys=["img"], roi_center=self.roi_center, roi_size=self.roi_size)(img)
 
-            # Calculate the start and end coordinates of the bounding box
-
-            bbox_start = [max(0, bbox_center[i] - int(bbox_size[i] / 2)) for i in range(len(bbox_center))]
-            bbox_end = [bbox_start[i] + int(bbox_size[i]) for i in range(len(bbox_center))]
-
-            cropped_data = {}
-
-            # Crop the image based on the bounding box
-            for key in self.keys:
-                if key == self.mask_key:
-                    continue  # Skip the mask key
-                cropped_data[key] = transforms.SpatialCrop(roi_start=bbox_start, roi_end=bbox_end)(data[key])
+            # Update the data dictionary with the cropped image
+            cropped_data = {self.keys[0]: cropped_img}
 
             return cropped_data

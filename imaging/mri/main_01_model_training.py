@@ -1,4 +1,3 @@
-from imaging.mri.utilities import *
 from imaging.mri.class_BrainLearn import BrainLearn
 
 bl = BrainLearn()
@@ -11,33 +10,17 @@ bl.max_iteration_trn = 1000
 bl.delta_iteration_trn = 100
 
 bl.build_dataset()
+bl.set_roi()
 
-# Find the ROI minimum size. The ROI dimensions for model training must be 2^n.
-bl.roi_set_size()
-bl.roi_expand(x=1.2)
-
-# When defining the model, make sure that the roi can be evenly divided n times, where
-# n is the number of layers of the UNet.
-
-# Compose the transforms
 bl.compose_transforms_trn()
 bl.compose_transforms_val()
 bl.compose_transforms_tst()
-# Load data (brain atlas, database...)
+
+bl.cache_dataset_trn()
+bl.cache_dataset_val()
+bl.cache_dataset_tst()
 
 bl.build_model_unet(num_res_units=4,
-                    channels=(64, 128, 256, 512, 1024),
-                    strides=(2, 2, 2, 2))
-
-# Register pre-contrast image
-
-
-
-wrm.get_dxdydz()
-wrm.compose_transforms_trn()
-
-wrm.cache_data()
-wrm.build_model_unet(num_res_units=4,
                      channels=(64, 128, 256, 512, 1024),
                      strides=(2, 2, 2, 2))
 # wrm.build_model_unetr(img_size=(128, 128, 128),
@@ -45,9 +28,3 @@ wrm.build_model_unet(num_res_units=4,
 #                      hidden_size=768,
 #                      feedfwd_layers=3072,
 #                      attention_heads=12)
-wrm.save_params()
-wrm.train()
-wrm.plot_loss()
-wrm.plot_metr()
-plt.show()
-
