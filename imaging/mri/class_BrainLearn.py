@@ -12,7 +12,7 @@ import pickle
 import pydicom
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, \
-    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD
+    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD, MapTransform
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
@@ -169,35 +169,27 @@ class BrainLearn:
             self.model.setattr(self, key, val)
 
     def compose_transforms_trn(self):
-        """compose the transformation for the training dataset"""
+        """Compose the transformation for the training dataset"""
         self.transforms_trn = Compose([
-            LoadImaged(
-                keys=["img", "lbl"]),
-            EnsureChannelFirstd(
-                keys=["img", "lbl"]),
+            LoadImaged(keys=["img", "msk"]),
+            EnsureChannelFirstd(keys=["img", "msk"]),
+            SpatialCropD(keys=["img"], roi_size=, roi_start=, roi_end=),
             # AsDiscreted(
             #     keys=["lbl"], to_onehot=self.n_classes),
-            Spacingd(
-                keys=["img", "lbl"],
-                pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
-                mode=("bilinear", "nearest")),
-            OrientationD(
-                keys=["img", "lbl"],
-                axcodes="RAS"),
-            # rescale intensity in the range [0, 1]
-            ScaleIntensityRanged(
-                keys=["img"],
-                a_min=self.intensity_min,
-                a_max=self.intensity_max,
-                b_min=0.0,
-                b_max=1.0,
-                clip=True),
-            SpatialCropD(
-                keys=["img"],
-                roi_size=,
-                roi_start=,
-                roi_end=,
-            )
+            # Spacingd(
+            #     keys=["img", "msk"],
+            #     pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
+            #     mode=("bilinear", "nearest")),
+            # OrientationD(
+            #     keys=["img", "lbl"],
+            #     axcodes="RAS"),
+            # ScaleIntensityRanged(
+            #     keys=["img"],
+            #     a_min=self.intensity_min,
+            #     a_max=self.intensity_max,
+            #     b_min=0.0,
+            #     b_max=1.0,
+            #     clip=True),
         ])
 
     def compose_transforms_val(self):
@@ -227,25 +219,39 @@ class BrainLearn:
         ])
 
     def build_dataset(self):
-        """Builds a list of dictionaries for trn, val, and tst datasets"""
-        # Each sample is a dictionary with (image path, mask path), where the brain mask is used to
-        # define the MRI region occupied by the brain and define a ROI for memory-efficient training.
-        path_images = sorted(glob.glob(os.path.join("dataset", "img*.nii.gz")))
-        path_labels = sorted(glob.glob(os.path.join("dataset", "sgm*.nii.gz")))
-        path_dicts = [{"img": image_name, "lbl": label_name} for image_name, label_name in zip(path_images, path_labels)]
+        """
+        Build training, validation and testing datasets. Each sample is a dictionary {img, msk, roi),
+        where 'img' is the path to the image, 'msk' is the path to the mask, and 'roi' is the ROI used to
+        crop the image for memory-efficient training.
+        """
+
+        # Create dictionary
+        path_img = sorted(glob.glob(os.path.join("dataset", "img*.nii.gz")))
+        path_msk = sorted(glob.glob(os.path.join("dataset", "msk.nii.gz")))
+        # Currently the ROI is calculated here. In the future, it should be calculated in the data
+        # pre-processing step and provided as text file for fast loading and operation.
+        roi = []
+        for val in path_msk:
+            val = self.set_roi(val, x=1.2)
+            roi.append(val)
+        path_dic = [{"img": img, "msk": msk, "roi": roi} for img, msk, roi in zip(path_img, path_msk, roi)]
+
         # select subset of data
         if self.data_percentage < 1:
-            path_dicts = path_dicts[:int(len(path_dicts) * self.data_percentage)]
+            path_dic = path_dic[:int(len(path_dic) * self.data_percentage)]
+
         # Calculate the number of samples for each split
-        n = len(path_dicts)
+        n = len(path_dic)
         n_tra = int(self.dataset_trn_ratio * n)
         n_val = int(self.dataset_val_ratio * n)
+
         # Shuffle the data list to randomize the order
-        random.shuffle(path_dicts)
+        random.shuffle(path_dic)
+
         # Split the data into training, validation, and testing sets, and store paths in attributes
-        self.dataset_trn = path_dicts[:n_tra]
-        self.dataset_val = path_dicts[n_tra:n_tra + n_val]
-        self.dataset_tst = path_dicts[n_tra + n_val:]
+        self.dataset_trn = path_dic[:n_tra]
+        self.dataset_val = path_dic[n_tra:n_tra + n_val]
+        self.dataset_tst = path_dic[n_tra + n_val:]
 
     def cache_dataset_trn(self):
         """cache training dataset and generate loader"""
@@ -530,7 +536,11 @@ class BrainLearn:
             # plt.savefig(os.path.join(self.params["dir_model"], f"{self.params['experiment']} img {step_val:02d} xyz {x, y, z} box.png"), dpi=1200)
             # plt.close()
 
-    def find_roi(self):
+    def roi_set_size_bak(self):
+        """
+        Find the volume of all brain masks in the dataset,
+        and return an ROI which sides are the largest among all brain masks.
+        """
         roi_max_size = np.array([0, 0, 0])
         for img, msk in {**self.dataset_trn, **self.dataset_val, **self.dataset_tst}:
             val = sitk.GetArrayViewFromImage(sitk.ReadImage(msk))
@@ -542,17 +552,60 @@ class BrainLearn:
             # Calculate the center of the bounding box
             roi_center = tuple((np.array(min_coord) + np.array(max_coord)) / 2)
             print(img, roi_center, roi_size)
-
+            # Update ROI size
             xyz_map = roi_size > roi_max_size
             roi_max_size[xyz_map] = roi_size[xyz_map]
+        self.roi_size = roi_max_size.astype(int)
 
-        return roi_max_size
+    def set_roi(self, msk, x):
+        msk = sitk.GetArrayViewFromImage(sitk.ReadImage(msk))
+        nonzero_indices = np.nonzero(msk)
+        min_coord = np.min(nonzero_indices, axis=1)
+        max_coord = np.max(nonzero_indices, axis=1)
+        # Calculate the size of the bounding box
+        roi_size = tuple(np.array(max_coord) - np.array(min_coord))
+        # Calculate the center of the bounding box
+        roi_center = tuple((np.array(min_coord) + np.array(max_coord)) / 2)
+        roi_size = np.floor(self.roi_size * x, type=int)
+        return roi_size, roi_center
 
-    # Define a custom transform to calculate the bounding box from the mask
-    class CalculateBoundingBox:
-        def __call__(self, image, mask, expand=0.2):
-            # mask = mask.squeeze()  # Ensure the mask is 3D (remove channel dimension if present)
+    def roi_expand(self, x=1.2):
+        """
+        Define a new ROI which is x times the stored ROI.
+        """
+        self.roi_size = np.floor(self.roi_size * x, type=int)
+
+    class CropImageBasedOnMask(MapTransform):
+        def __init__(self, keys, mask_key, msk_scale_factor):
+            super().__init__()
+            self.keys = keys  # A list of keys representing the data fields to which the transformation is applied.
+            self.mask_key = mask_key  # The key of the maks
+            self.msk_scale_factor = msk_scale_factor  # The mask rescaling factor
+
+        def __call__(self, data):
+            mask = data[self.mask_key]
+            # Calculate the bounding box coordinates by finding the minimum and maximum indices along each dimension
             nonzero_indices = np.nonzero(mask)
             min_coord = np.min(nonzero_indices, axis=1)
             max_coord = np.max(nonzero_indices, axis=1)
-            return image, (min_coord, max_coord)
+            # Calculate the center of the bounding box
+            bbox_c = (min_coord + max_coord) // 2
+            # Calculate the size of the bounding box after rescaling
+            bbox_s = (max_coord - min_coord) * self.msk_scale_factor
+            
+
+
+            # Calculate the start and end coordinates of the bounding box
+
+            bbox_start = [max(0, bbox_center[i] - int(bbox_size[i] / 2)) for i in range(len(bbox_center))]
+            bbox_end = [bbox_start[i] + int(bbox_size[i]) for i in range(len(bbox_center))]
+
+            cropped_data = {}
+
+            # Crop the image based on the bounding box
+            for key in self.keys:
+                if key == self.mask_key:
+                    continue  # Skip the mask key
+                cropped_data[key] = transforms.SpatialCrop(roi_start=bbox_start, roi_end=bbox_end)(data[key])
+
+            return cropped_data
