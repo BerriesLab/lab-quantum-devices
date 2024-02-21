@@ -1,7 +1,7 @@
 from imaging.mri.class_BrainLearn import BrainLearn
 
 bl = BrainLearn()
-bl.path_main = "/Users/berri/Desktop/ct"
+bl.path_main = "E:/gd_synthesis"
 bl.dataset_trn_ratio = 0.7
 bl.dataset_val_ratio = 0.2
 bl.dataset_tst_ratio = 0.1

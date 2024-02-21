@@ -16,7 +16,7 @@ for file in files:
     # Calculate the size of the bounding box after rescaling
     bbox_s = (max_coord - min_coord)
     # Define the filename for saving the bounding box information
-    output_file = f"{file[:-8]} info.txt"
+    output_file = f"{file[:-8]}.info.txt"
     # Write the bounding box information to the text file
     with open(output_file, "w", newline="") as csvfile:
         writer = csv.writer(csvfile)

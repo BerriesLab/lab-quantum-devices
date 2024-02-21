@@ -67,9 +67,9 @@ class BrainLearn:
         self.batch_trn_size = 1  # training dataset batch size
         self.batch_val_size = 1  # validation dataset batch size
         self.batch_tst_size = 1  # testing dataset batch size
-        self.dataset_trn = {}  # list of dictionary for training the model (compiled by method)
-        self.dataset_val = {}  # list of dictionary for validating the model (compiled by method)
-        self.dataset_tst = {}  # list of dictionary for testing the model (compiled by method)
+        self.dataset_trn: list or None = None  # list of dictionary for training the model (compiled by method)
+        self.dataset_val: list or None = None  # list of dictionary for validating the model (compiled by method)
+        self.dataset_tst: list or None = None  # list of dictionary for testing the model (compiled by method)
         self.loader_trn = None  # training data loader (compiled by method)
         self.loader_val = None  # validation data loader (compiled by method)
         self.loader_tst = None  # testing data loader (compiled by method)
@@ -129,7 +129,6 @@ class BrainLearn:
             var = "mps"
         else:
             var = "cpu"
-        print(f"Model running on {self.device}")
         return var
 
     def get_voxel_size(self):
@@ -223,16 +222,18 @@ class BrainLearn:
 
     def build_dataset(self):
         """
-        Build training, validation and testing datasets. Each sample is a dictionary {img, msk, roi),
-        where 'img' is the path to the image, 'msk' is the path to the mask, and 'roi' is the ROI used to
-        crop the image for memory-efficient training.
+        Build training, validation and testing datasets.
+        Each sample is a dictionary {img T1wC0.5, img T1wC1.0, msk, roi}, where 'img T1wC0.5' is the path to the
+        image with C0.5 contrast dose, 'img T1wC1.0' is the path to the image with C1.0 contrast dose,
+        'msk' is the path to the brain mask, and 'roi' is the ROI used to crop the image for memory-efficient training.
         """
 
         # Create dictionary
-        path_img = sorted(glob.glob(os.path.join("dataset", "**.nii")))
-        path_msk = sorted(glob.glob(os.path.join("dataset", "**.msk.nii")))
-        path_roi = sorted(glob.glob(os.path.join("dataset", "**info.txt")))
-        path_dic = [{"img": img, "msk": msk, "roi": roi} for img, msk, roi in zip(path_img, path_msk, path_roi)]
+        path_im1 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.5.nii")))
+        path_im2 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC1.0.nii")))
+        path_msk = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.msk.nii")))
+        path_roi = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.info.txt")))
+        path_dic = [{"img1": img1, "img2": img2, "msk": msk, "roi": roi} for img1, img2, msk, roi in zip(path_im1, path_im2, path_msk, path_roi)]
 
         # select subset of data
         if self.data_percentage < 1:
@@ -562,7 +563,8 @@ class BrainLearn:
         of layers in the UNet model.
         """
         roi_size = np.zeros(3)
-        for roi in {**self.dataset_trn, **self.dataset_val, **self.dataset_tst}:
+        for val in self.dataset_trn + self.dataset_val + self.dataset_tst:
+            roi = val["roi"]
             # Read the bounding box information from the CSV file
             with open(roi, "r") as file:
                 reader = csv.reader(file)
@@ -576,13 +578,12 @@ class BrainLearn:
                     # Append bounding box information to the list
                     roi_size[bbox_s > roi_size] = bbox_s[bbox_s > roi_size]
         # Rescale the ROI
-        roi_size = np.floor(roi_size * x, type=int)
+        roi_size = np.floor(roi_size * x)
         # Find the smallest ROI which is divisible by 2^n
         roi_size_x = closest_divisible_by_power_of_two(roi_size[0], n)
         roi_size_y = closest_divisible_by_power_of_two(roi_size[1], n)
         roi_size_z = closest_divisible_by_power_of_two(roi_size[2], n)
-        roi_size = np.max(roi_size_x, roi_size_y, roi_size_z)
-        self.roi_size = np.array([roi_size, roi_size, roi_size])
+        self.roi_size = np.array([roi_size_x, roi_size_y, roi_size_z]).astype(int)
 
     class CropImageBasedOnROI(Transform):
         def __init__(self, keys: list, roi_center: np.ndarray, roi_size: np.ndarray):
