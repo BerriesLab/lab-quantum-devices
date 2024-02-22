@@ -174,10 +174,11 @@ class BrainLearn:
     def compose_transforms_trn(self):
         """Compose the transformation for the training dataset"""
         self.transforms_trn = Compose([
-            LoadImaged(keys=["img1", "img2"]),
+            #LoadImaged(keys=["img1", "img2"]),
+            self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
             EnsureChannelFirstd(keys=["img1", "img2"]),
-            #RandSpatialCropD(keys=["img1", "img2"], roi_size=(128, 128, 128)),
-            self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_key=["roi"], roi_size=self.roi_size),
+            RandSpatialCropD(keys=["img1", "img2"], roi_size=(128, 128, 128)),
+            #self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_key="roi", roi_size=self.roi_size),
             ToTensorD(keys=["img1", "img2"]),
             #LambdaD(keys=["img1", "img2"],)
             #self.CropImageBasedOnROI(keys=["img1", "img2"], roi_size=self.roi_size),
@@ -237,9 +238,10 @@ class BrainLearn:
         # Create dictionary
         path_im1 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.5.nii")))
         path_im2 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC1.0.nii")))
-        path_msk = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.msk.nii")))
+        #path_msk = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.msk.nii")))
         path_roi = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.info.txt")))
-        path_dic = [{"img1": img1, "img2": img2, "msk": msk, "roi": roi} for img1, img2, msk, roi in zip(path_im1, path_im2, path_msk, path_roi)]
+        #path_dic = [{"img1": img1, "img2": img2, "msk": msk, "roi": roi} for img1, img2, msk, roi in zip(path_im1, path_im2, path_msk, path_roi)]
+        path_dic = [{"img1": img1, "img2": img2, "roi": roi} for img1, img2, roi in zip(path_im1, path_im2, path_roi)]
 
         # select subset of data
         if self.data_percentage < 1:
@@ -591,7 +593,7 @@ class BrainLearn:
         self.roi_size = np.array([roi_size_x, roi_size_y, roi_size_z]).astype(int)
 
     class CropImageBasedOnROI(Transform):
-        def __init__(self, img_keys: list, roi_key: list, roi_size):
+        def __init__(self, img_keys: list, roi_key: str, roi_size):
             super().__init__()
             self.img_keys = img_keys
             self.roi_key = roi_key
@@ -612,3 +614,28 @@ class BrainLearn:
             cropped_data = {self.img_keys: cropped_img}
 
             return cropped_data
+
+    class LoadImageAndTextD(LoadImaged):
+        def __init__(self, image_keys: list[str], text_keys: list[str]):
+            super().__init__(keys=image_keys)
+            self.text_keys = text_keys
+
+        def __call__(self, data):
+            data = super().__call__(data)  # Call the parent class method to load image data
+
+            for key in self.text_keys:
+                if key in data:
+                    text_path = data[key]
+                    if os.path.exists(text_path) and os.path.isfile(text_path):
+                        with open(text_path, 'r') as file:
+                            csv_reader = csv.reader(file)
+                            # Skip the header row
+                            next(csv_reader)
+                            # Read the second row and combine the first three elements into an array
+                            row = next(csv_reader)
+                            roi_center = np.array(row[:3]).astype(int)
+                            data[key] = roi_center
+                    else:
+                        raise ValueError(f"Text file not found or is not a regular file: {text_path}")
+            print(data)
+            return data
