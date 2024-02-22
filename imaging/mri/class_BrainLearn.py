@@ -13,7 +13,7 @@ import SimpleITK as sitk
 from utilities import closest_divisible_by_power_of_two
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, \
-    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform, LambdaD
+    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform, LambdaD, RandSpatialCropD, ToTensorD
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
@@ -176,8 +176,10 @@ class BrainLearn:
         self.transforms_trn = Compose([
             LoadImaged(keys=["img1", "img2"]),
             EnsureChannelFirstd(keys=["img1", "img2"]),
-            LambdaD(keys=["img1", "img2"],)
-            self.CropImageBasedOnROI(keys=["img1", "img2"], roi_size=self.roi_size),
+            RandSpatialCropD(keys=["img1", "img2"], roi_size=(128, 128, 128)),
+            ToTensorD(keys=["img1", "img2"]),
+            #LambdaD(keys=["img1", "img2"],)
+            #self.CropImageBasedOnROI(keys=["img1", "img2"], roi_size=self.roi_size),
             # SpatialCropD(keys=["img"], roi_size=, roi_start=, roi_end=),
             # AsDiscreted(
             #     keys=["lbl"], to_onehot=self.n_classes),
@@ -202,12 +204,12 @@ class BrainLearn:
         self.transforms_val = Compose([
             LoadImaged(keys=["img", "lbl"]),
             EnsureChannelFirstd(keys=["img", "lbl"]),
-            AsDiscreted(keys=["lbl"], to_onehot=self.n_classes),
-            Spacingd(keys=["img", "lbl"], pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
-                     mode=("bilinear", "nearest")),
-            OrientationD(keys=["img", "lbl"], axcodes="RAS"),
-            ScaleIntensityRanged(keys=["img"], a_min=self.intensity_min, a_max=self.intensity_max,
-                                 b_min=0.0, b_max=1.0, clip=True),
+            #AsDiscreted(keys=["lbl"], to_onehot=self.n_classes),
+            #Spacingd(keys=["img", "lbl"], pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
+            #         mode=("bilinear", "nearest")),
+            #OrientationD(keys=["img", "lbl"], axcodes="RAS"),
+            #ScaleIntensityRanged(keys=["img"], a_min=self.intensity_min, a_max=self.intensity_max,
+            #                     b_min=0.0, b_max=1.0, clip=True),
         ])
 
     def compose_transforms_tst(self):
@@ -588,23 +590,32 @@ class BrainLearn:
         self.roi_size = np.array([roi_size_x, roi_size_y, roi_size_z]).astype(int)
 
     class CropImageBasedOnROI(Transform):
-        def __init__(self, keys: list, roi_size: np.ndarray):
+        def __init__(self, img_key: list, roi_key: list, roi_size):
             super().__init__()
-            self.keys = keys
-            self.roi_size = roi_size
-            self.roi_center = self.get_roi_center()
-
-        def get_roi_center(self):
-            return None
+            self.img_key = img_key
+            self.roi_key = roi_key
+            self.roi_size: np.array = roi_size
+            self.roi_center: np.array or None = None
 
         def __call__(self, data):
-            # Load image
-            img_path = data[self.keys[0]]
+
+            # Extract the img
+            img = data[self.img_key]
+            # Extract the roi
+            roi = data[self.roi_key]
+            bbox_c_x, bbox_c_y, bbox_c_z, bbox_s_x, bbox_s_y, bbox_s_z = roi
+            roi_center = np.array([bbox_c_x, bbox_c_y, bbox_c_z])
+
+            # Apply custom transformation to the input image
+            cropped_img = SpatialCropD(keys=self.keys, roi_center=roi_center, roi_size=self.roi_size)
+
+            # Update the value in the dictionary with the transformed image
+            data[self.key] = img
 
             roi_center = data[""]["roi_center"]
 
             # Crop the image based on the ROI
-            cropped_img = SpatialCropD(keys=self.keys, roi_center=self.roi_center, roi_size=self.roi_size)
+
 
             # Update the data dictionary with the cropped image
             cropped_data = {self.keys[0]: cropped_img}
