@@ -2,6 +2,8 @@ import os
 import csv
 import glob
 import random
+
+import monai.config
 import numpy as np
 import torch
 import nibabel as nib
@@ -9,11 +11,9 @@ import tqdm
 import datetime
 import SimpleITK as sitk
 from utilities import closest_divisible_by_power_of_two
-import pickle
-import pydicom
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImaged, EnsureChannelFirstd, Spacingd, OrientationD, ScaleIntensityRanged, \
-    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform
+    AsDiscreted, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform, LambdaD
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
@@ -81,6 +81,8 @@ class BrainLearn:
         self.scores = None
         # HARDWARE
         self.device = torch.device(self.set_gpu())
+
+        monai.config.print_config()
 
     def generate_experiment_name(self):
         """the experiment name is the datetime. Model info are saved in a text file"""
@@ -174,6 +176,7 @@ class BrainLearn:
         self.transforms_trn = Compose([
             LoadImaged(keys=["img1", "img2"]),
             EnsureChannelFirstd(keys=["img1", "img2"]),
+            LambdaD(keys=["img1", "img2"],)
             self.CropImageBasedOnROI(keys=["img1", "img2"], roi_size=self.roi_size),
             # SpatialCropD(keys=["img"], roi_size=, roi_start=, roi_end=),
             # AsDiscreted(
