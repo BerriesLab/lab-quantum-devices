@@ -174,15 +174,12 @@ class BrainLearn:
     def compose_transforms_trn(self):
         """Compose the transformation for the training dataset"""
         self.transforms_trn = Compose([
-            #LoadImaged(keys=["img1", "img2"]),
             self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
             EnsureChannelFirstd(keys=["img1", "img2"]),
-            RandSpatialCropD(keys=["img1", "img2"], roi_size=(128, 128, 128)),
-            #self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_key="roi", roi_size=self.roi_size),
+            self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_keys=["roi"], roi_size=self.roi_size),
             ToTensorD(keys=["img1", "img2"]),
-            #LambdaD(keys=["img1", "img2"],)
-            #self.CropImageBasedOnROI(keys=["img1", "img2"], roi_size=self.roi_size),
-            # SpatialCropD(keys=["img"], roi_size=, roi_start=, roi_end=),
+            # LoadImaged(keys=["img1", "img2"]),
+            # RandSpatialCropD(keys=["img1", "img2"], roi_size=(128, 128, 128)),
             # AsDiscreted(
             #     keys=["lbl"], to_onehot=self.n_classes),
             # Spacingd(
@@ -204,27 +201,55 @@ class BrainLearn:
     def compose_transforms_val(self):
         """compose the transformation for the validation dataset"""
         self.transforms_val = Compose([
-            LoadImaged(keys=["img", "lbl"]),
-            EnsureChannelFirstd(keys=["img", "lbl"]),
-            #AsDiscreted(keys=["lbl"], to_onehot=self.n_classes),
-            #Spacingd(keys=["img", "lbl"], pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
-            #         mode=("bilinear", "nearest")),
-            #OrientationD(keys=["img", "lbl"], axcodes="RAS"),
-            #ScaleIntensityRanged(keys=["img"], a_min=self.intensity_min, a_max=self.intensity_max,
-            #                     b_min=0.0, b_max=1.0, clip=True),
+            self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
+            EnsureChannelFirstd(keys=["img1", "img2"]),
+            self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_keys=["roi"], roi_size=self.roi_size),
+            ToTensorD(keys=["img1", "img2"]),
+            # LoadImaged(keys=["img1", "img2"]),
+            # RandSpatialCropD(keys=["img1", "img2"], roi_size=(128, 128, 128)),
+            # AsDiscreted(
+            #     keys=["lbl"], to_onehot=self.n_classes),
+            # Spacingd(
+            #     keys=["img", "msk"],
+            #     pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
+            #     mode=("bilinear", "nearest")),
+            # OrientationD(
+            #     keys=["img", "lbl"],
+            #     axcodes="RAS"),
+            # ScaleIntensityRanged(
+            #     keys=["img"],
+            #     a_min=self.intensity_min,
+            #     a_max=self.intensity_max,
+            #     b_min=0.0,
+            #     b_max=1.0,
+            #     clip=True),
         ])
 
     def compose_transforms_tst(self):
         """compose the transformation for the testing dataset"""
         self.transforms_tst = Compose([
-            LoadImaged(keys=["img", "lbl"]),
-            EnsureChannelFirstd(keys=["img", "lbl"]),
-            AsDiscreted(keys=["lbl"], to_onehot=self.n_classes),
-            Spacingd(keys=["img", "lbl"], pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
-                     mode=("bilinear", "nearest")),
-            OrientationD(keys=["img", "lbl"], axcodes="RAS"),
-            ScaleIntensityRanged(keys=["img"], a_min=self.intensity_min, a_max=self.intensity_max,
-                                 b_min=0.0, b_max=1.0, clip=True),
+            self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
+            EnsureChannelFirstd(keys=["img1", "img2"]),
+            self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_keys=["roi"], roi_size=self.roi_size),
+            ToTensorD(keys=["img1", "img2"]),
+            # LoadImaged(keys=["img1", "img2"]),
+            # RandSpatialCropD(keys=["img1", "img2"], roi_size=(128, 128, 128)),
+            # AsDiscreted(
+            #     keys=["lbl"], to_onehot=self.n_classes),
+            # Spacingd(
+            #     keys=["img", "msk"],
+            #     pixdim=(self.voxel[0], self.voxel[1], self.voxel[2]),
+            #     mode=("bilinear", "nearest")),
+            # OrientationD(
+            #     keys=["img", "lbl"],
+            #     axcodes="RAS"),
+            # ScaleIntensityRanged(
+            #     keys=["img"],
+            #     a_min=self.intensity_min,
+            #     a_max=self.intensity_max,
+            #     b_min=0.0,
+            #     b_max=1.0,
+            #     clip=True),
         ])
 
     def build_dataset(self):
@@ -238,9 +263,9 @@ class BrainLearn:
         # Create dictionary
         path_im1 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.5.nii")))
         path_im2 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC1.0.nii")))
-        #path_msk = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.msk.nii")))
+        # path_msk = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.msk.nii")))
         path_roi = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.info.txt")))
-        #path_dic = [{"img1": img1, "img2": img2, "msk": msk, "roi": roi} for img1, img2, msk, roi in zip(path_im1, path_im2, path_msk, path_roi)]
+        # path_dic = [{"img1": img1, "img2": img2, "msk": msk, "roi": roi} for img1, img2, msk, roi in zip(path_im1, path_im2, path_msk, path_roi)]
         path_dic = [{"img1": img1, "img2": img2, "roi": roi} for img1, img2, roi in zip(path_im1, path_im2, path_roi)]
 
         # select subset of data
@@ -593,27 +618,19 @@ class BrainLearn:
         self.roi_size = np.array([roi_size_x, roi_size_y, roi_size_z]).astype(int)
 
     class CropImageBasedOnROI(Transform):
-        def __init__(self, img_keys: list, roi_key: str, roi_size):
+        def __init__(self, img_keys: list[str], roi_keys: list[str], roi_size):
             super().__init__()
             self.img_keys = img_keys
-            self.roi_key = roi_key
+            self.roi_keys = roi_keys
             self.roi_size: np.array = roi_size
             self.roi_center: np.array or None = None
 
         def __call__(self, data):
-
-            # Extract the roi
-            roi = data[self.roi_key]
-            bbox_c_x, bbox_c_y, bbox_c_z, bbox_s_x, bbox_s_y, bbox_s_z = roi
-            roi_center = np.array([bbox_c_x, bbox_c_y, bbox_c_z])
-
-            # Apply custom transformation to the input image
-            cropped_img = SpatialCropD(keys=self.img_keys, roi_center=roi_center, roi_size=self.roi_size)
-
-            # Update the data dictionary with the cropped image
-            cropped_data = {self.img_keys: cropped_img}
-
-            return cropped_data
+            for roi_key in self.roi_keys:
+                if roi_key in data:
+                    roi_center = data[roi_key]
+                    cropped_img = SpatialCropD(keys=self.img_keys, roi_center=roi_center, roi_size=self.roi_size)(data)
+                    return cropped_img
 
     class LoadImageAndTextD(LoadImaged):
         def __init__(self, image_keys: list[str], text_keys: list[str]):
@@ -637,5 +654,5 @@ class BrainLearn:
                             data[key] = roi_center
                     else:
                         raise ValueError(f"Text file not found or is not a regular file: {text_path}")
-            print(data)
+            #print(data)
             return data
