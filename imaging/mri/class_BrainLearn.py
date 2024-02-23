@@ -226,25 +226,28 @@ class BrainLearn:
         # path_roi = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.info.txt")))
         # path_dic = [{"img1": img1, "img2": img2, "msk": msk, "roi": roi} for img1, img2, msk, roi in zip(path_im1, path_im2, path_msk, path_roi)]
         path_dic = [{"img1": img1, "img2": img2, "msk": msk} for img1, img2, msk in zip(path_im1, path_im2, path_msk)]
-
         #path_dic = [{"img1": img1, "img2": img2, "roi": roi} for img1, img2, roi in zip(path_im1, path_im2, path_roi)]
 
         # select subset of data
         if self.data_percentage < 1:
-            path_dic = path_dic[:int(len(path_dic) * self.data_percentage)]
+            # Adjust the data percentage to ensure at least one sample for each split
+            min_samples = 3  # Minimum number of samples required for training, validation, and testing
+            max_samples = int(len(path_dic) * self.data_percentage)  # Maximum number of samples based on data percentage
+            n = max(min_samples, max_samples)  # Ensure at least min_samples
+            # Shuffle the data list to randomize the order
+            random.shuffle(path_dic)
+            # path_dic = path_dic[:num_samples]
 
         # Calculate the number of samples for each split
-        n = len(path_dic)
-        n_tra = np.ceil(self.dataset_trn_ratio * n).astype(int)
-        n_val = np.ceil(self.dataset_val_ratio * n).astype(int)
-
-        # Shuffle the data list to randomize the order
-        random.shuffle(path_dic)
+        # n = len(path_dic)
+        n_tra = max(1, np.floor(self.dataset_trn_ratio * n).astype(int))
+        n_val = max(1, np.floor(self.dataset_val_ratio * n).astype(int))
+        n_tst = max(1, np.floor(self.dataset_tst_ratio * n).astype(int))
 
         # Split the data into training, validation, and testing sets, and store paths in attributes
         self.dataset_trn = path_dic[:n_tra]
         self.dataset_val = path_dic[n_tra:n_tra + n_val]
-        self.dataset_tst = path_dic[n_tra + n_val:]
+        self.dataset_tst = path_dic[n_tra + n_val:n_tra + n_val + n_tst]
 
     def cache_dataset_trn(self):
         """cache training dataset and generate loader"""
@@ -322,6 +325,10 @@ class BrainLearn:
                 self.scores[epoch] = score
                 # save model to disc
                 torch.save(self.model, os.path.join(self._path_model, f"{self.experiment} - iter {epoch + 1:03d} mdl.pth"))
+                # Monitor GPU memory usage
+                memory_allocated = torch.cuda.memory_allocated(self.device)
+                max_memory_allocated = torch.cuda.max_memory_allocated(self.device)
+                print(f"Epoch {epoch + 1}: Memory allocated - {memory_allocated}, Max memory allocated - {max_memory_allocated}")
 
     def validate(self, epoch):
         """Validate the model"""
