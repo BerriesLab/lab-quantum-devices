@@ -46,11 +46,11 @@ class BrainLearn:
         # at the beginning of the training phase.
         # MODEL
         self.model = None
-        self.n_classes = 2
+        self.n_classes = 1  # For image generation, the output classes are just one.
         self.optimizer = None
         self.max_iteration_trn = 100  # max iteration for training
-        self.delta_iteration_trn = 1  # number of iterations in-between each validation step
-        self.roi_size = None
+        self.delta_iteration_trn = 1  # number of iterations in-between each validation step.
+        self.roi_size = None  # Can be used to select a ROI for data training
         # TRANSFORMATIONS
         self.intensity_min = -1.0  # min voxel intensity value, used for intensity rescaling
         self.intensity_max = 1.0  # max voxel intensity value, used for intensity rescaling
