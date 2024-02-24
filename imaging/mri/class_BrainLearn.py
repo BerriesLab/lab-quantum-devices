@@ -338,7 +338,7 @@ class BrainLearn:
         self.model.eval()
         # Disable gradient computation (which is useless for validation)
         with torch.no_grad():
-            # IMPLEMENTARE SLIDING WINDOW INFERENCE
+            # IMPLEMENTARE SLIDING WINDOW INFERENCE - CHECK
             epoch_val_iterator = tqdm.tqdm(self.loader_val, desc="Validate (X / X Steps) (dice=X.X)", dynamic_ncols=True, miniters=1)
             for step_val, batch_val in enumerate(epoch_val_iterator):
                 # Send the validation data to device (GPU)
