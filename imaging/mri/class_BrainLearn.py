@@ -2,8 +2,6 @@ import os
 import csv
 import glob
 import random
-
-import monai.config
 import numpy as np
 import torch
 import nibabel as nib
@@ -11,24 +9,19 @@ import tqdm
 import datetime
 import SimpleITK as sitk
 from utilities import closest_divisible_by_power_of_two
+import monai.config
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImageD, EnsureChannelFirstD, SpacingD, OrientationD, ScaleIntensityRanged, \
-    AsDiscreteD, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform, LambdaD, RandSpatialCropD, ToTensorD, \
+    AsDiscreteD, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform, LambdaD, ToTensorD, \
     RandSpatialCropSamplesD
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
-from monai.losses import DiceLoss
-from monai.losses import MultiScaleLoss
-from monai.metrics import DiceMetric
-from monai.losses.ssim_loss import SSIMLoss
+from monai.losses import DiceLoss, SSIMLoss, MultiScaleLoss
+from monai.metrics import DiceMetric, SSIMMetric, MultiScaleSSIMMetric
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from skimage.color import label2rgb
-from skimage.measure import label, regionprops
-from skimage.exposure import rescale_intensity
-from skimage.morphology import ball, remove_small_objects, binary_opening, binary_closing
 
 
 class BrainLearn:
@@ -51,7 +44,7 @@ class BrainLearn:
         self.optimizer = None
         self.max_iteration_trn = 100  # max iteration for training
         self.delta_iteration_trn = 1  # number of iterations in-between each validation step.
-        self.roi_size = None  # Can be used to select a ROI for data training
+        self.patch_size = None  # Can be used to select a ROI for data training
         # TRANSFORMATIONS
         self.intensity_min = -1.0  # min voxel intensity value, used for intensity rescaling
         self.intensity_max = 1.0  # max voxel intensity value, used for intensity rescaling
@@ -81,10 +74,12 @@ class BrainLearn:
         self.losses = None
         self.scores = None
         # HARDWARE
-        self.device = torch.device(self.set_gpu())
+        self.device = None
+        # FIGURES
+        self.plot_loss = None
+        self.plot_score = None
 
         monai.config.print_config()
-        print(f"Model running on {self.device}.")
 
     def generate_experiment_name(self):
         """the experiment name is the datetime. Model info are saved in a text file"""
@@ -125,15 +120,17 @@ class BrainLearn:
         if metric_function == "mssim":
             self.metric_function = None
 
-    def set_gpu(self):
-        """check gpu availability and set device to use"""
-        if torch.cuda.is_available():
+    def set_device(self, device: str = "cpu"):
+        """Set device to use"""
+        if device.lower() == "cuda" and torch.cuda.is_available():
             var = "cuda"
-        elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        elif device.lower() == "mps" and torch.backends.mps.is_available() and torch.backends.mps.is_built():
             var = "mps"
+        elif device.lower() == "cpu":
+            var = "cpu"
         else:
             var = "cpu"
-        return var
+        self.device = torch.device(var)
 
     def get_voxel_size(self):
         """extract voxel dimensions from first image in training dataset"""
@@ -143,10 +140,10 @@ class BrainLearn:
         self.voxel[0], self.voxel[1], self.voxel[2] = nib.load(self.dataset_trn[0]["img"]).header.get_zooms()
 
     def save_model(self):
-        torch.save(self.model, os.path.join(self.path_model, self.experiment))
+        torch.save(self.model, os.path.join(self._path_model, self.experiment))
 
     def load_model(self, model):
-        self.model = torch.load(os.path.join(self.path_main, self.path_model, model), map_location=self.device)
+        self.model = torch.load(os.path.join(self.path_main, self._path_model, model), map_location=self.device)
 
     def save_model_attributes_to_csv(self, filename):
         """save model attributes to CSV"""
@@ -178,11 +175,11 @@ class BrainLearn:
         self.transforms_trn = Compose([
             LoadImageD(keys=["img1", "img2", "msk"]),
             EnsureChannelFirstD(keys=["img1", "img2", "msk"]),
-            RandSpatialCropSamplesD(keys=["img1", "img2", "msk"], roi_size=self.roi_size, num_samples=10),
+            RandSpatialCropSamplesD(keys=["img1", "img2", "msk"], roi_size=self.patch_size, num_samples=10),
             ToTensorD(keys=["img1", "img2", "msk"]),
             # self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
             # EnsureChannelFirstD(keys=["img1", "img2", "msk"]),
-            # self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_keys=["roi"], roi_size=self.roi_size),
+            # self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_keys=["roi"], roi_size=self.patch_size),
             # ScaleIntensityRanged(keys=["img1", "img2"], a_min=self.intensity_min, a_max=self.intensity_max, b_min=0.0, b_max=1.0, clip=True),
             # ToTensorD(keys=["img1", "img2", "msk"]),
         ])
@@ -229,21 +226,17 @@ class BrainLearn:
         #path_dic = [{"img1": img1, "img2": img2, "roi": roi} for img1, img2, roi in zip(path_im1, path_im2, path_roi)]
 
         # select subset of data
-        if self.data_percentage < 1:
-            # Adjust the data percentage to ensure at least one sample for each split
-            min_samples = 3  # Minimum number of samples required for training, validation, and testing
-            max_samples = int(len(path_dic) * self.data_percentage)  # Maximum number of samples based on data percentage
-            n = max(min_samples, max_samples)  # Ensure at least min_samples
-            # Shuffle the data list to randomize the order
-            random.shuffle(path_dic)
-            # path_dic = path_dic[:num_samples]
-
-        # Calculate the number of samples for each split
-        # n = len(path_dic)
-        n_tra = max(1, np.floor(self.dataset_trn_ratio * n).astype(int))
-        n_val = max(1, np.floor(self.dataset_val_ratio * n).astype(int))
-        n_tst = max(1, np.floor(self.dataset_tst_ratio * n).astype(int))
-
+        n = int(len(path_dic) * self.data_percentage)
+        if n < 3:
+            n_tra = 1
+            n_val = 1
+            n_tst = 1
+        else:
+            n_tra = max(1, np.floor(self.dataset_trn_ratio * n).astype(int))
+            n_val = max(1, np.floor(self.dataset_val_ratio * n).astype(int))
+            n_tst = max(1, np.floor(self.dataset_tst_ratio * n).astype(int))
+        # Shuffle the data list to randomize the order
+        random.shuffle(path_dic)
         # Split the data into training, validation, and testing sets, and store paths in attributes
         self.dataset_trn = path_dic[:n_tra]
         self.dataset_val = path_dic[n_tra:n_tra + n_val]
@@ -273,7 +266,7 @@ class BrainLearn:
             spatial_dims=3,
             in_channels=1,
             out_channels=self.n_classes,
-            channels=(64, 128, 256, 512, 1024),  # sequence of channels. Top block first. len(channels) >= 2
+            channels=(32, 64, 128, 256, 512),  # sequence of channels. Top block first. len(channels) >= 2
             strides=(2, 2, 2, 2),  # sequence of convolution strides. len(strides) = len(channels) - 1.
             kernel_size=3, # convolution kernel size, value(s) should be odd. If sequence, length = N. layers.
             up_kernel_size=3, # de-convolution kernel size, value(s) should be odd. If sequence, length = N. layers
@@ -291,6 +284,12 @@ class BrainLearn:
         self.epochs = np.arange(self.max_iteration_trn)
         self.losses = np.zeros(self.max_iteration_trn)
         self.scores = np.zeros(self.max_iteration_trn)
+        # Create figures for plotting
+        # self.plot_loss = self.PlotLoss()
+        # self.plot_loss.create_figure("Epoch", "Loss", "Training Loss")
+        # self.plot_score = self.PlotLoss()
+        # self.plot_score.create_figure("Epoch", "Score", "Validation Metric")
+        # Run training
         for epoch in range(self.max_iteration_trn):
             # set the model to training. This has effect only on some transforms
             self.model.train()
@@ -314,21 +313,21 @@ class BrainLearn:
                 # update metrics
                 self.optimizer.step()
                 # Update the progress bar description with loss and metrics
-                epoch_trn_iterator.set_description(f"Training ({epoch + 1} / {self.max_iteration_trn} Steps) (loss={epoch_loss:2.5f})")
+                epoch_trn_iterator.set_description(f"Training ({epoch + 1} / {self.max_iteration_trn} Steps) (loss = {epoch_loss:2.5f})")
             # store epoch's loss in losses array
             self.losses[epoch] = epoch_loss
+            # Update figure
+            # self.plot_loss.update_figure(self.epochs[:epoch + 1], self.losses[:epoch + 1])
+            # self.plot_loss.save_figure(os.path.join(self.path_main, self._path_model, f"{self.experiment} - iter {epoch + 1:03d} loss.png"))
             # validate model every "delta_iteration"
             if epoch == 0 or (epoch + 1) % self.delta_iteration_trn == 0 or (epoch + 1) == self.max_iteration_trn:
                 # run validation
                 score = self.validate(epoch)
                 # store validation metrics in metrics array
                 self.scores[epoch] = score
+                # self.plot_score.update_figure(self.epochs[:epoch + 1], self.scores[:epoch + 1])
                 # save model to disc
-                torch.save(self.model, os.path.join(self._path_model, f"{self.experiment} - iter {epoch + 1:03d} mdl.pth"))
-                # Monitor GPU memory usage
-                memory_allocated = torch.cuda.memory_allocated(self.device)
-                max_memory_allocated = torch.cuda.max_memory_allocated(self.device)
-                print(f"Epoch {epoch + 1}: Memory allocated - {memory_allocated}, Max memory allocated - {max_memory_allocated}")
+                torch.save(self.model.state_dict(), os.path.join(self.path_main, self._path_model, f"{self.experiment} - iter {epoch + 1:03d} mdl.pth"))
 
     def validate(self, epoch):
         """Validate the model"""
@@ -338,200 +337,67 @@ class BrainLearn:
         self.model.eval()
         # Disable gradient computation (which is useless for validation)
         with torch.no_grad():
-            # IMPLEMENTARE SLIDING WINDOW INFERENCE
-            epoch_val_iterator = tqdm.tqdm(self.loader_val, desc="Validate (X / X Steps) (dice=X.X)", dynamic_ncols=True, miniters=1)
+            epoch_val_iterator = tqdm.tqdm(self.loader_val, desc="Validate (X / X Steps) (metric = X.X)", dynamic_ncols=True, miniters=1)
             for step_val, batch_val in enumerate(epoch_val_iterator):
                 # Send the validation data to device (GPU)
                 img, tgt = batch_val["img1"].to(self.device), batch_val["img2"].to(self.device)
                 # Run inference by forward passing windowed input data through the model
-                prd = sliding_window_inference([img, tgt], self.roi_size, progress=True)
-                # prd = self.model(img)
+                prd = sliding_window_inference(img, roi_size=(128, 128, 128), sw_batch_size=1, predictor=self.model, progress=False)
                 # Evaluate metric
                 batch_score = self.metric_function(prd, tgt).mean().item()
                 # Add batch's validation metric and then calculate average metric
                 epoch_score += batch_score
                 score_mean = epoch_score / (step_val + 1)
                 # Update the progress bar description with metric
-                epoch_val_iterator.set_description(f"Validate ({epoch + 1} / {self.max_iteration_trn} Steps) (dice={score_mean:2.5f})")
+                epoch_val_iterator.set_description(f"Validate ({epoch + 1} / {self.max_iteration_trn} Steps) (metric = {score_mean:2.5f})")
         return score_mean
 
-    def testing(self):
+    def test(self):
         """test model on a testing dataset"""
-
-    # plot training loss vs epoch
-    def plot_loss(self, show=False):
-        plt.figure()
-        plt.plot(self.epochs, self.losses, lw=0, ms=6, marker='o', color='black')
-        plt.title("Training Loss")
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.tight_layout()
-        if show:
-            plt.show()
-        plt.savefig(os.path.join(self.path_model, f"{self.experiment} loss vs epoch.png"))
-
-    # plot validation metric vs epoch
-    def plot_metr(self, show=False):
-        plt.figure()
-        plt.plot(self.epochs[self.metrics != 0], self.metrics[self.metrics != 0], lw=0, ms=6, marker='o', color='black')
-        plt.title("Validation Metric")
-        plt.xlabel("Epoch")
-        plt.ylabel("Metric")
-        plt.tight_layout()
-        if show:
-            plt.show()
-        plt.savefig(os.path.join(self.path_model, f"{self.experiment} metric vs epoch.png"))
-
-    # plot segmentation
-    def testing(self, morph):
         epoch_tst_iterator = tqdm.tqdm(self.loader_tst, desc="Validating (X / X Steps)", dynamic_ncols=True, miniters=1)
         for step_tst, batch_tst in enumerate(epoch_tst_iterator):
             epoch_tst_iterator.set_description(f"Validating ({step_tst + 1} / {len(epoch_tst_iterator)} Steps)")
-            img_tst, lbl_tst = batch_tst["img"].to(self.device), batch_tst["lbl"].to(self.device)
-            lbl_prd = self.model(img_tst)
-            # convert tensors from one hot encoding to single channel
-            img_tst = img_tst[0, 0, :, :, :].cpu().numpy()
-            lbl_tst = torch.argmax(lbl_tst, dim=1)[0, :, :, :].cpu().numpy()
-            lbl_prd = torch.argmax(lbl_prd, dim=1)[0, :, :, :].cpu().numpy()
-            # morphological operation: erosion
-            if morph is True:
-                for n in range(2):
-                    lbl_prd = binary_opening(lbl_prd, ball(2))
-                lbl_prd = binary_closing(lbl_prd, ball(1))
-                lbl_prd = remove_small_objects(lbl_prd, 64)
-            print(f"\nPlotting sample {step_tst}...")
-            # Find the (x,y,z) coordinates of the sample center
-            x = int(np.floor(img_tst.shape[0] / 2))
-            y = int(np.floor(img_tst.shape[1] / 2))
-            z = int(np.floor(img_tst.shape[2] / 2))
-            # run a connectivity analysis on test and prediction
-            lbl_tst = label(lbl_tst, connectivity=1)
-            rgn_tst = regionprops(lbl_tst)
-            n_rgn_tst = len(rgn_tst)
-            lbl_prd = label(lbl_prd, connectivity=1)
-            rgn_prd = regionprops(lbl_prd)
-            n_rgn_prd = len(rgn_prd)
-            print(f"N. regions ground truth: {n_rgn_tst}\n"
-                  f"N. regions prediction: {n_rgn_prd}\n"
-                  f"Relative error (%): {(n_rgn_prd - n_rgn_tst) / n_rgn_tst * 100}")
-            # Generate overlay images
-            img_tst_x = img_tst[x, :, :]
-            img_tst_y = img_tst[:, y, :]
-            img_tst_z = img_tst[:, :, z]
-            lbl_tst_x = lbl_tst[x, :, :]
-            lbl_tst_y = lbl_tst[:, y, :]
-            lbl_tst_z = lbl_tst[:, :, z]
-            lbl_prd_x = lbl_prd[x, :, :]
-            lbl_prd_y = lbl_prd[:, y, :]
-            lbl_prd_z = lbl_prd[:, :, z]
-            img_label_overlay_x_tst = label2rgb(label=lbl_tst_x, image=rescale_intensity(img_tst_x, out_range=(0, 1)),
-                                                alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_y_tst = label2rgb(label=lbl_tst_y, image=rescale_intensity(img_tst_y, out_range=(0, 1)),
-                                                alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_z_tst = label2rgb(label=lbl_tst_z, image=rescale_intensity(img_tst_z, out_range=(0, 1)),
-                                                alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_x_prd = label2rgb(label=lbl_prd_x, image=rescale_intensity(img_tst_x, out_range=(0, 1)),
-                                                alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_y_prd = label2rgb(label=lbl_prd_y, image=rescale_intensity(img_tst_y, out_range=(0, 1)),
-                                                alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            img_label_overlay_z_prd = label2rgb(label=lbl_prd_z, image=rescale_intensity(img_tst_z, out_range=(0, 1)),
-                                                alpha=0.3, bg_label=0, bg_color=None, kind="overlay", saturation=0.6)
-            # plot
-            fig, axs = plt.subplots(2, ncols=3)
-            axs[0, 0].set_title(f"YZ plane at X = {x} px")
-            axs[0, 0].imshow(img_label_overlay_x_tst)
-            axs[1, 0].imshow(img_label_overlay_x_prd)
-            axs[0, 1].set_title(f"XZ plane at Y = {y} px")
-            axs[0, 1].imshow(img_label_overlay_y_tst)
-            axs[1, 1].imshow(img_label_overlay_y_prd)
-            axs[0, 2].set_title(f"XY plane at Z = {z} px")
-            axs[0, 2].imshow(img_label_overlay_z_tst)
-            axs[1, 2].imshow(img_label_overlay_z_prd)
-            # Remove x-axis and y-axis ticks, labels, and tick marks for all subplots
-            for ax in axs.flat:
-                ax.set_xticks([])
-                ax.set_yticks([])
-                ax.set_xticklabels([])
-                ax.set_yticklabels([])
-            # Adjust layout for better spacing
+            img_tst, lbl_tst = batch_tst["img1"].to(self.device), batch_tst["img2"].to(self.device)
+            prd = self.model(img_tst)
+
+    def save_loss(self):
+        # Stack x and y horizontally
+        data = np.column_stack((self.epochs, self.losses))
+        # Save as CSV
+        np.savetxt(os.path.join(self.path_main, self._path_model, 'losses.csv'), data, delimiter=',', header='x,y', comments='')
+
+    def save_score(self):
+        # Stack x and y horizontally
+        data = np.column_stack((self.epochs, self.scores))
+        # Save as CSV
+        np.savetxt(os.path.join(self.path_main, self._path_model, 'scores.csv'), data, delimiter=',', header='x,y', comments='')
+
+    def estimate_memory(self):
+        """Estimate the memory required to train the model"""
+
+    class PlotLoss:
+        """A class to handle the plot of the loss function"""
+        def __init__(self):
+            self.fig = None
+            self.ax = None
+            self.line = None
+
+        def create_figure(self, xlabel, ylabel, title=None):
+            self.fig, self.ax = plt.subplots()  # corrected plt.figure() to plt.subplots()
+            self.line, = self.ax.plot([], [], lw=0, ms=6, marker='o', color='black')  # corrected to empty lists for x and y data
+            plt.title(title)
+            plt.xlabel(xlabel)
+            plt.ylabel(ylabel)
             plt.tight_layout()
-            # Save the figure to a file
-            plt.savefig(os.path.join("test", f"{self.params['experiment']} img {step_tst:02d} xyz {x, y, z}.png"),
-                        dpi=1200)
-            # Add rectangles around regions
-            regions = regionprops(lbl_tst_x)
-            for region in regions:
-                minr, minc, maxr, maxc = region.bbox
-                rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
-                axs[0, 0].add_patch(rect)
-            regions = regionprops(lbl_tst_y)
-            for region in regions:
-                minr, minc, maxr, maxc = region.bbox
-                rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
-                axs[0, 1].add_patch(rect)
-            regions = regionprops(lbl_tst_z)
-            for region in regions:
-                minr, minc, maxr, maxc = region.bbox
-                rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
-                axs[0, 2].add_patch(rect)
-            regions = regionprops(lbl_prd_x)
-            for region in regions:
-                minr, minc, maxr, maxc = region.bbox
-                rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
-                axs[1, 0].add_patch(rect)
-            regions = regionprops(lbl_prd_y)
-            for region in regions:
-                minr, minc, maxr, maxc = region.bbox
-                rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
-                axs[1, 1].add_patch(rect)
-            regions = regionprops(lbl_prd_z)
-            for region in regions:
-                minr, minc, maxr, maxc = region.bbox
-                rect = Rectangle((minc, minr), maxc - minc, maxr - minr, fill=False, edgecolor='red', linewidth=0.3)
-                axs[1, 2].add_patch(rect)
-            # Save the figure to a file
-            plt.savefig(os.path.join("test", f"{self.params['experiment']} img {step_tst:02d} xyz {x, y, z} box.png"),
-                        dpi=1200)
-            plt.close()
+            plt.show(block=False)
 
-    # load a large ct scan and segment
-    def segment(self, path_img, path_lbl):
-        path_dict = [{"image": path_img, "label": path_lbl}]
-        # Define transforms for loading and preprocessing the NIfTI files
-        transforms = Compose([
-            # CropLabelledVolumed(keys=["image", "label"]),
-            LoadImageD(keys=["image", "label"]),
-            EnsureChannelFirstD(keys=["image", "label"]),
-            # Spacingd(keys=["image", "label"], pixdim=(dx, dy, dz), mode=("bilinear", "nearest")),
-            OrientationD(keys=["image", "label"], axcodes="RAS"),
-            ScaleIntensityRanged(keys=["image"], a_min=self.params['intensity_min'], a_max=self.params['intensity_max'],
-                                 b_min=0.0, b_max=1.0, clip=True),
-        ])
-        dataset = CacheDataset(data=path_dict, transform=transforms)
-        loader = DataLoader(dataset)
+        def update_figure(self, x, y):
+            self.line.set_data(x, y)
+            self.ax.autoscale()
+            plt.pause(0.1)
 
-        for step_val, batch_val in enumerate(loader):
-            img_inp, lbl_inp = batch_val["img"].to(self.device), batch_val["lbl"].to(self.device)
-            # run inference window
-            roi_size = (128, 128, 128)
-            sw_batch_size = 4
-            lbl_prd = sliding_window_inference(img_inp, roi_size, sw_batch_size, self.model)
-            lbl_prd = [AsDiscrete(threshold=0.5)(lbl) for lbl in decollate_batch(lbl_prd)]
-            lbl_inp = [AsDiscrete(threshold=0.5)(lbl) for lbl in decollate_batch(lbl_inp)]
-            # convert tensors from one hot encoding to single channel
-            lbl_out = torch.argmax(lbl_prd, dim=1).cpu().numpy()[0, :, :, :]
-            # nib.save(os.path.join(self.params["dir_model"], f'{self.params["experiment"]} params.dat')
-            # img_array = lbl_inp.cpu().numpy()[0, 0, :, :, :]
-
-            # lbl_array_prd = torch.argmax(prd_val, dim=1).cpu().numpy()[0, :, :, :]
-            print(f"Plotting sample {step_val}...")
-            # Find the (x,y,z) coordinates of the sample center
-            # lbl_array_val = label(lbl_array_val, connectivity=1)
-            # lbl_array_prd = label(lbl_array_prd, connectivity=1)
-            # Generate overlay images
-
-            # plt.savefig(os.path.join(self.params["dir_model"], f"{self.params['experiment']} img {step_val:02d} xyz {x, y, z} box.png"), dpi=1200)
-            # plt.close()
+        def save_figure(self, path):
+            self.fig.savefig(path)
 
     def roi_set_size_bak(self):
         """
@@ -622,3 +488,5 @@ class BrainLearn:
                         raise ValueError(f"Text file not found or is not a regular file: {text_path}")
             #print(data)
             return data
+
+

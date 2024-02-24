@@ -2,21 +2,21 @@ from imaging.mri.class_BrainLearn import BrainLearn
 
 bl = BrainLearn()
 
-bl.path_main = "E:/gd_synthesis"
+bl.path_main = "E:\\gd_synthesis"
 # Set parameters
-bl.roi_size = (64, 64, 64)
+bl.set_device("cuda")
+bl.patch_size = (64, 64, 64)
 bl.batch_trn_size = 1
 bl.batch_tst_size = 1
 bl.batch_val_size = 1
 bl.max_iteration_trn = 1000
-bl.delta_iteration_trn = 100
+bl.delta_iteration_trn = 50
 # Build dataset
-bl.data_percentage = 0.1
+bl.data_percentage = 1
 bl.dataset_trn_ratio = 0.7
 bl.dataset_val_ratio = 0.2
 bl.dataset_tst_ratio = 0.1
 bl.build_dataset()
-# bl.set_roi()
 # Compose transformation - Edit the class method to amend
 bl.compose_transforms_trn()
 bl.compose_transforms_val()
@@ -30,5 +30,8 @@ bl.build_model_unet()
 bl.set_loss_function()
 bl.set_metric_function()
 bl.set_optimizer()
+# Train model
 bl.train()
-
+# Save Loss and Score
+bl.save_loss()
+bl.save_score()
