@@ -29,6 +29,7 @@ bl.cache_dataset_tst()
 # Build model
 bl.build_model_unet()
 bl.set_loss_function()
+bl.set_metric_function()
 bl.set_optimizer()
 bl.train()
 

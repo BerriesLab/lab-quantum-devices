@@ -306,9 +306,9 @@ class BrainLearn:
                 outputs = self.model(inputs)
                 # calculate loss and add it to epoch's loss
                 loss = self.loss_function(outputs, targets)
-                # Weight the loss
-                loss = loss * msk
-                epoch_loss += loss.item()
+                # Weight the loss and get mean value
+                loss = (loss * msk).mean()
+                epoch_loss += loss.mean().item()
                 # backpropagation
                 loss.backward()
                 # update metrics
@@ -344,14 +344,11 @@ class BrainLearn:
                 # ???? Do we do this in between batches ???
                 self.metric_function.reset()
                 # send the validation data to device (GPU)
-                img_val, lbl_val = batch_val["img"].to(self.device), batch_val["lbl"].to(self.device)
+                img, tgt = batch_val["img1"].to(self.device), batch_val["img2"].to(self.device)
                 # run inference by forward passing the input data through the model
-                prd_val = self.model(img_val)
-                # binarize the prediction (as required by the dice metric)
-                prd_val = AsDiscrete(threshold=0.5)(prd_val)
-                self.metric_function(y_pred=prd_val, y=lbl_val)
-                # evaluate metric. ??? Need to aggregate first ??? and then collect the item.
-                batch_score = self.metric_function.aggregate().item()
+                prd = self.model(img)
+                # Evaluate metric
+                batch_score = self.metric_function(prd, tgt).mean().item()
                 # add batch's validation metric and then calculate average metric
                 epoch_score += batch_score
                 score_mean = epoch_score / (step_val + 1)
