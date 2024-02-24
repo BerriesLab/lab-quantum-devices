@@ -332,24 +332,22 @@ class BrainLearn:
 
     def validate(self, epoch):
         """Validate the model"""
-        # set validation metric to zero
+        # Set validation metric to zero
         epoch_score = 0
-        # set the model to validation. This affects some transforms.
+        # Set the model to validation. This affects some transforms.
         self.model.eval()
-        # disable gradient computation (which is useless for validation)
+        # Disable gradient computation (which is useless for validation)
         with torch.no_grad():
+            # IMPLEMENTARE SLIDING WINDOW INFERENCE
             epoch_val_iterator = tqdm.tqdm(self.loader_val, desc="Validate (X / X Steps) (dice=X.X)", dynamic_ncols=True, miniters=1)
             for step_val, batch_val in enumerate(epoch_val_iterator):
-                # reset dice metrics for next validation round.
-                # ???? Do we do this in between batches ???
-                self.metric_function.reset()
-                # send the validation data to device (GPU)
+                # Send the validation data to device (GPU)
                 img, tgt = batch_val["img1"].to(self.device), batch_val["img2"].to(self.device)
-                # run inference by forward passing the input data through the model
+                # Run inference by forward passing the input data through the model
                 prd = self.model(img)
                 # Evaluate metric
                 batch_score = self.metric_function(prd, tgt).mean().item()
-                # add batch's validation metric and then calculate average metric
+                # Add batch's validation metric and then calculate average metric
                 epoch_score += batch_score
                 score_mean = epoch_score / (step_val + 1)
                 # Update the progress bar description with metric

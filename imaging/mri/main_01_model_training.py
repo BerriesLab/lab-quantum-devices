@@ -1,5 +1,4 @@
 from imaging.mri.class_BrainLearn import BrainLearn
-import time
 
 bl = BrainLearn()
 
