@@ -343,8 +343,9 @@ class BrainLearn:
             for step_val, batch_val in enumerate(epoch_val_iterator):
                 # Send the validation data to device (GPU)
                 img, tgt = batch_val["img1"].to(self.device), batch_val["img2"].to(self.device)
-                # Run inference by forward passing the input data through the model
-                prd = self.model(img)
+                # Run inference by forward passing windowed input data through the model
+                prd = sliding_window_inference([img, tgt], self.roi_size, progress=True)
+                # prd = self.model(img)
                 # Evaluate metric
                 batch_score = self.metric_function(prd, tgt).mean().item()
                 # Add batch's validation metric and then calculate average metric
