@@ -5,7 +5,8 @@ bl = BrainLearn()
 bl.path_main = "E:\\gd_synthesis"
 # Set parameters
 bl.set_device("cuda")
-bl.patch_size = (64, 64, 64)
+bl.patch_size = (128, 128, 128)
+bl.patch_number = 20
 bl.batch_trn_size = 1
 bl.batch_tst_size = 1
 bl.batch_val_size = 1
@@ -16,7 +17,7 @@ bl.data_percentage = 1
 bl.dataset_trn_ratio = 0.7
 bl.dataset_val_ratio = 0.2
 bl.dataset_tst_ratio = 0.1
-bl.build_dataset()
+bl.build_dataset(shuffle=False)
 # Compose transformation - Edit the class method to amend
 bl.compose_transforms_trn()
 bl.compose_transforms_val()
@@ -24,7 +25,7 @@ bl.compose_transforms_tst()
 # Cache data
 bl.cache_dataset_trn()
 bl.cache_dataset_val()
-bl.cache_dataset_tst()
+# bl.cache_dataset_tst()
 # Build model
 bl.build_model_unet()
 bl.set_loss_function()

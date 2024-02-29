@@ -13,7 +13,7 @@ import monai.config
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImageD, EnsureChannelFirstD, SpacingD, OrientationD, ScaleIntensityRanged, \
     AsDiscreteD, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform, LambdaD, ToTensorD, \
-    RandSpatialCropSamplesD
+    RandSpatialCropSamplesD, RandCropByPosNegLabelD
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
@@ -45,6 +45,8 @@ class BrainLearn:
         self.max_iteration_trn = 100  # max iteration for training
         self.delta_iteration_trn = 1  # number of iterations in-between each validation step.
         self.patch_size = None  # Can be used to select a ROI for data training
+        self.patch_number: int or None = None
+        self._epoch = None
         # TRANSFORMATIONS
         self.intensity_min = -1.0  # min voxel intensity value, used for intensity rescaling
         self.intensity_max = 1.0  # max voxel intensity value, used for intensity rescaling
@@ -131,6 +133,7 @@ class BrainLearn:
         else:
             var = "cpu"
         self.device = torch.device(var)
+        print(f"Running on {self.device}")
 
     def get_voxel_size(self):
         """extract voxel dimensions from first image in training dataset"""
@@ -138,12 +141,6 @@ class BrainLearn:
             print("Error: dataset_trn is empty. Build datasets first.")
             return
         self.voxel[0], self.voxel[1], self.voxel[2] = nib.load(self.dataset_trn[0]["img"]).header.get_zooms()
-
-    def save_model(self):
-        torch.save(self.model, os.path.join(self._path_model, self.experiment))
-
-    def load_model(self, model):
-        self.model = torch.load(os.path.join(self.path_main, self._path_model, model), map_location=self.device)
 
     def save_model_attributes_to_csv(self, filename):
         """save model attributes to CSV"""
@@ -175,13 +172,10 @@ class BrainLearn:
         self.transforms_trn = Compose([
             LoadImageD(keys=["img1", "img2", "msk"]),
             EnsureChannelFirstD(keys=["img1", "img2", "msk"]),
-            RandSpatialCropSamplesD(keys=["img1", "img2", "msk"], roi_size=self.patch_size, num_samples=10),
-            ToTensorD(keys=["img1", "img2", "msk"]),
-            # self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
-            # EnsureChannelFirstD(keys=["img1", "img2", "msk"]),
+            RandCropByPosNegLabelD(keys=["img1", "img2", "msk"], label_key="msk", spatial_size=self.patch_size, neg=0.2, num_samples=self.patch_number),
             # self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_keys=["roi"], roi_size=self.patch_size),
             # ScaleIntensityRanged(keys=["img1", "img2"], a_min=self.intensity_min, a_max=self.intensity_max, b_min=0.0, b_max=1.0, clip=True),
-            # ToTensorD(keys=["img1", "img2", "msk"]),
+            ToTensorD(keys=["img1", "img2", "msk"]),
         ])
 
     def compose_transforms_val(self):
@@ -189,11 +183,8 @@ class BrainLearn:
         self.transforms_val = Compose([
             LoadImageD(keys=["img1", "img2", "msk"]),
             EnsureChannelFirstD(keys=["img1", "img2", "msk"]),
-            ToTensorD(keys=["img1", "img2", "msk"]),
-            # self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
-            # EnsureChannelFirstD(keys=["img1", "img2"]),
             # ScaleIntensityRanged(keys=["img1", "img2"], a_min=self.intensity_min, a_max=self.intensity_max, b_min=0.0, b_max=1.0, clip=True),
-            # ToTensorD(keys=["img1", "img2", "msk"]),
+            ToTensorD(keys=["img1", "img2", "msk"]),
         ])
 
     def compose_transforms_tst(self):
@@ -201,14 +192,17 @@ class BrainLearn:
         self.transforms_tst = Compose([
             LoadImageD(keys=["img1", "img2", "msk"]),
             EnsureChannelFirstD(keys=["img1", "img2"]),
-            ToTensorD(keys=["img1", "img2"]),
-            # self.LoadImageAndTextD(image_keys=["img1", "img2"], text_keys=["roi"]),
-            # EnsureChannelFirstD(keys=["img1", "img2"]),
             # ScaleIntensityRanged(keys=["img1", "img2"], a_min=self.intensity_min, a_max=self.intensity_max, b_min=0.0, b_max=1.0, clip=True),
-            # ToTensorD(keys=["img1", "img2", "msk"]),
+            ToTensorD(keys=["img1", "img2"]),
         ])
 
-    def build_dataset(self):
+    def _print_shape(data, prefix):
+        print("\n")
+        for key, val in data.items():
+            print(f"{prefix} - {key}: {val.shape}")
+        return data
+
+    def build_dataset(self, shuffle=True):
         """
         Build training, validation and testing datasets.
         Each sample is a dictionary {img T1wC0.5, img T1wC1.0, msk, roi}, where 'img T1wC0.5' is the path to the
@@ -236,11 +230,16 @@ class BrainLearn:
             n_val = max(1, np.floor(self.dataset_val_ratio * n).astype(int))
             n_tst = max(1, np.floor(self.dataset_tst_ratio * n).astype(int))
         # Shuffle the data list to randomize the order
-        random.shuffle(path_dic)
+        if shuffle is True:
+            random.shuffle(path_dic)
         # Split the data into training, validation, and testing sets, and store paths in attributes
         self.dataset_trn = path_dic[:n_tra]
         self.dataset_val = path_dic[n_tra:n_tra + n_val]
         self.dataset_tst = path_dic[n_tra + n_val:n_tra + n_val + n_tst]
+
+        print(self.dataset_trn)
+        print(self.dataset_val)
+        print(self.dataset_tst)
 
     def cache_dataset_trn(self):
         """cache training dataset and generate loader"""
@@ -262,7 +261,7 @@ class BrainLearn:
 
     def build_model_unet(self):  # weight decay of the Adam optimizer
         """Build a UNet model"""
-        model = UNet(
+        self.model = UNet(
             spatial_dims=3,
             in_channels=1,
             out_channels=self.n_classes,
@@ -274,7 +273,6 @@ class BrainLearn:
             # act=params["activation_function"],
             dropout=0
         ).to(self.device)
-        self.model = model
 
     def train(self):
         """Train the model"""
@@ -291,6 +289,8 @@ class BrainLearn:
         # self.plot_score.create_figure("Epoch", "Score", "Validation Metric")
         # Run training
         for epoch in range(self.max_iteration_trn):
+            # Update epoch
+            self._epoch = epoch
             # set the model to training. This has effect only on some transforms
             self.model.train()
             # initialize the epoch's loss
@@ -313,21 +313,21 @@ class BrainLearn:
                 # update metrics
                 self.optimizer.step()
                 # Update the progress bar description with loss and metrics
-                epoch_trn_iterator.set_description(f"Training ({epoch + 1} / {self.max_iteration_trn} Steps) (loss = {epoch_loss:2.5f})")
+                epoch_trn_iterator.set_description(f"Training ({self._epoch + 1} / {self.max_iteration_trn} Steps) (loss = {epoch_loss:2.5f})")
             # store epoch's loss in losses array
-            self.losses[epoch] = epoch_loss
+            self.losses[self._epoch] = epoch_loss
             # Update figure
             # self.plot_loss.update_figure(self.epochs[:epoch + 1], self.losses[:epoch + 1])
             # self.plot_loss.save_figure(os.path.join(self.path_main, self._path_model, f"{self.experiment} - iter {epoch + 1:03d} loss.png"))
             # validate model every "delta_iteration"
-            if epoch == 0 or (epoch + 1) % self.delta_iteration_trn == 0 or (epoch + 1) == self.max_iteration_trn:
+            if self._epoch == 0 or (self._epoch + 1) % self.delta_iteration_trn == 0 or (self._epoch + 1) == self.max_iteration_trn:
                 # run validation
-                score = self.validate(epoch)
+                score = self.validate(self._epoch)
                 # store validation metrics in metrics array
-                self.scores[epoch] = score
+                self.scores[self._epoch] = score
                 # self.plot_score.update_figure(self.epochs[:epoch + 1], self.scores[:epoch + 1])
                 # save model to disc
-                torch.save(self.model.state_dict(), os.path.join(self.path_main, self._path_model, f"{self.experiment} - iter {epoch + 1:03d} mdl.pth"))
+                self.save_model()
 
     def validate(self, epoch):
         """Validate the model"""
@@ -349,7 +349,7 @@ class BrainLearn:
                 epoch_score += batch_score
                 score_mean = epoch_score / (step_val + 1)
                 # Update the progress bar description with metric
-                epoch_val_iterator.set_description(f"Validate ({epoch + 1} / {self.max_iteration_trn} Steps) (metric = {score_mean:2.5f})")
+                epoch_val_iterator.set_description(f"Validate ({self._epoch + 1} / {self.max_iteration_trn} Steps) (metric = {score_mean:2.5f})")
         return score_mean
 
     def test(self):
@@ -371,6 +371,36 @@ class BrainLearn:
         data = np.column_stack((self.epochs, self.scores))
         # Save as CSV
         np.savetxt(os.path.join(self.path_main, self._path_model, 'scores.csv'), data, delimiter=',', header='x,y', comments='')
+
+    def save_dataset_trn_paths_to_csv(self):
+        """Save list of training data paths to csv."""
+        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} dataset trn.csv"), 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Paths'])  # Writing header
+            for val in self.dataset_trn:
+                writer.writerow([val])
+
+    def save_dataset_val_paths_to_csv(self):
+        """Save list of training data paths to csv."""
+        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} dataset val.csv"), 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Paths'])  # Writing header
+            for val in self.dataset_val:
+                writer.writerow([val])
+
+    def save_dataset_tst_list_to_csv(self):
+        """Save list of training data paths to csv."""
+        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} dataset tst.csv"), 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(['Paths'])  # Writing header
+            for val in self.dataset_tst:
+                writer.writerow([val])
+
+    def save_model(self):
+        torch.save(self.model.state_dict(), os.path.join(self.path_main, self._path_model, f"{self.experiment} - iter {self._epoch + 1:03d} mdl.pth"))
+
+    def load_model(self, model):
+        self.model = torch.load(os.path.join(self.path_main, self._path_model, model), map_location=self.device)
 
     def estimate_memory(self):
         """Estimate the memory required to train the model"""
