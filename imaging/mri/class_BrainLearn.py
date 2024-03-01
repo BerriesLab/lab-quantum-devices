@@ -196,6 +196,7 @@ class BrainLearn:
             ToTensorD(keys=["img1", "img2"]),
         ])
 
+    @staticmethod
     def _print_shape(data, prefix):
         print("\n")
         for key, val in data.items():
@@ -360,21 +361,9 @@ class BrainLearn:
             img_tst, lbl_tst = batch_tst["img1"].to(self.device), batch_tst["img2"].to(self.device)
             prd = self.model(img_tst)
 
-    def save_loss(self):
-        # Stack x and y horizontally
-        data = np.column_stack((self.epochs, self.losses))
-        # Save as CSV
-        np.savetxt(os.path.join(self.path_main, self._path_model, 'losses.csv'), data, delimiter=',', header='x,y', comments='')
-
-    def save_score(self):
-        # Stack x and y horizontally
-        data = np.column_stack((self.epochs, self.scores))
-        # Save as CSV
-        np.savetxt(os.path.join(self.path_main, self._path_model, 'scores.csv'), data, delimiter=',', header='x,y', comments='')
-
     def save_dataset_trn_paths_to_csv(self):
         """Save list of training data paths to csv."""
-        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} dataset trn.csv"), 'w', newline='') as file:
+        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} - dataset trn.csv"), 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['Paths'])  # Writing header
             for val in self.dataset_trn:
@@ -382,15 +371,15 @@ class BrainLearn:
 
     def save_dataset_val_paths_to_csv(self):
         """Save list of training data paths to csv."""
-        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} dataset val.csv"), 'w', newline='') as file:
+        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} - dataset val.csv"), 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['Paths'])  # Writing header
             for val in self.dataset_val:
                 writer.writerow([val])
 
-    def save_dataset_tst_list_to_csv(self):
+    def save_dataset_tst_paths_to_csv(self):
         """Save list of training data paths to csv."""
-        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} dataset tst.csv"), 'w', newline='') as file:
+        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} - dataset tst.csv"), 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['Paths'])  # Writing header
             for val in self.dataset_tst:
@@ -398,6 +387,41 @@ class BrainLearn:
 
     def save_model(self):
         torch.save(self.model.state_dict(), os.path.join(self.path_main, self._path_model, f"{self.experiment} - iter {self._epoch + 1:03d} mdl.pth"))
+
+    def save_model_attributes(self):
+        # Get all attributes of the object
+        attributes = vars(self.model)
+        # Filter out protected attributes
+        attributes = {k: v for k, v in attributes.items() if not k.startswith('_')}
+        # Extract attribute names and values
+        attribute_names = list(attributes.keys())
+        attribute_values = list(attributes.values())
+        # Write attributes to CSV
+        with open(os.path.join(self.path_main, self._path_model, f"{self.experiment} - model attributes.csv"), 'w', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(attribute_names)
+            writer.writerow(attribute_values)
+
+    def save_loss(self):
+        data = np.column_stack((self.epochs, self.losses))
+        np.savetxt(os.path.join(self.path_main, self._path_model, f"{self.experiment} - losses.csv"), data, delimiter=',', header='x,y', comments='')
+        plt.plot(data[:, 0], data[:, 1])
+        plt.semilogy()
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.savefig(os.path.join(self.path_main, self._path_model, f"{self.experiment} - losses.png"))
+        plt.close()
+
+    def save_score(self):
+        data = np.column_stack((self.epochs, self.scores))
+        np.savetxt(os.path.join(self.path_main, self._path_model, f"{self.experiment} - scores.csv"), data, delimiter=',', header='x,y', comments='')
+        data = data[data[0:, 1] != 0]
+        plt.plot(data[:, 0], data[:, 1])
+        plt.semilogy()
+        plt.xlabel("Epoch")
+        plt.ylabel("Score")
+        plt.savefig(os.path.join(self.path_main, self._path_model, f"{self.experiment} - scores.png"))
+        plt.close()
 
     def load_model(self, model):
         self.model = torch.load(os.path.join(self.path_main, self._path_model, model), map_location=self.device)

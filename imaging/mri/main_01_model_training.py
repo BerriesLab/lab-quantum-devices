@@ -5,7 +5,7 @@ bl = BrainLearn()
 bl.path_main = "E:\\gd_synthesis"
 # Set parameters
 bl.set_device("cuda")
-bl.patch_size = (128, 128, 128)
+bl.patch_size = (64, 64, 64)
 bl.patch_number = 20
 bl.batch_trn_size = 1
 bl.batch_tst_size = 1
@@ -34,5 +34,10 @@ bl.set_optimizer()
 # Train model
 bl.train()
 # Save Loss and Score
+bl.save_dataset_trn_paths_to_csv()
+bl.save_dataset_val_paths_to_csv()
+bl.save_dataset_tst_paths_to_csv()
+bl.save_model_attributes()
 bl.save_loss()
 bl.save_score()
+
