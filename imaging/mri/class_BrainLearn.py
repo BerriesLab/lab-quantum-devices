@@ -12,8 +12,7 @@ from utilities import closest_divisible_by_power_of_two
 import monai.config
 from monai.networks.nets import UNet, UNETR
 from monai.transforms import Compose, LoadImageD, EnsureChannelFirstD, SpacingD, OrientationD, ScaleIntensityRanged, \
-    AsDiscreteD, AsDiscrete, SpacingD, SpatialCropD, MapTransform, Transform, LambdaD, ToTensorD, \
-    RandSpatialCropSamplesD, RandCropByPosNegLabelD
+    AsDiscreteD, AsDiscrete, SpacingD, SpatialCropD, Transform, LambdaD, ToTensorD, RandCropByPosNegLabelD
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
