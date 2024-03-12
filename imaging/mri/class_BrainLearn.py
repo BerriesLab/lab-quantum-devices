@@ -11,8 +11,8 @@ import SimpleITK as sitk
 from utilities import closest_divisible_by_power_of_two, extract_axial_section, extract_coronal_section, extract_sagittal_section
 import monai.config
 from monai.networks.nets import UNet, UNETR
-from monai.transforms import Compose, LoadImageD, EnsureChannelFirstD, SpacingD, OrientationD, ScaleIntensityRanged, \
-    AsDiscreteD, AsDiscrete, SpacingD, SpatialCropD, Transform, LambdaD, ToTensorD, RandCropByPosNegLabelD, SaveImage
+from monai.transforms import Compose, LoadImageD, EnsureChannelFirstD, OrientationD, ScaleIntensityRanged, \
+    AsDiscreteD, AsDiscrete, Spacingd, SpatialCropD, Transform, LambdaD, ToTensorD, RandCropByPosNegLabelD, SaveImage
 from monai.data import CacheDataset, DataLoader, decollate_batch
 from monai.inferers import sliding_window_inference
 
@@ -29,7 +29,7 @@ class BrainLearn:
         # however these subdirectory can be changed by changing the corresponding protected attributes.
         # Note: main -> dataset includes training, validation and testing datasets
         self.path_main = None
-        self._path_dataset = "dataset"
+        self._path_dataset = "dataset_compressed"
         self._path_data_raw = "raw"
         self._path_model = "model"
         self._path_results = "results"
@@ -40,6 +40,7 @@ class BrainLearn:
         self.optimizer = None
         self.max_iteration_trn = 100  # max iteration for training
         self.delta_iteration_trn = 1  # number of iterations in-between each validation step.
+        self.delta_iteration_save = 1
         self.patch_size_trn = None  # Patch size for training dataset
         self.patch_size_val = None  # Patch size for validation dataset
         self.patch_size_tst = None  # Patch size for testing dataset
@@ -90,6 +91,7 @@ class BrainLearn:
             EnsureChannelFirstD(keys=["img1", "img2", "msk"]),
             RandCropByPosNegLabelD(keys=["img1", "img2", "msk"], label_key="msk", spatial_size=self.patch_size_trn, neg=0.2, num_samples=self.patch_number),
             # self.CropImageBasedOnROI(img_keys=["img1", "img2"], roi_keys=["roi"], roi_size=self.patch_size),
+            # Spacingd(keys=["img1", "img2", "msk"], pixdim=(1, 1, 1), mode=('bilinear', 'bilinear', 'nearest')),
             # ScaleIntensityRanged(keys=["img1", "img2"], a_min=self.intensity_min, a_max=self.intensity_max, b_min=0.0, b_max=1.0, clip=True),
             ToTensorD(keys=["img1", "img2", "msk"]),
         ])
@@ -122,10 +124,10 @@ class BrainLearn:
         """
 
         # Create dictionary
-        path_im1 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.5.nii")))
-        path_im2 = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC1.0.nii")))
-        path_msk = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.msk.nii")))
-        # path_roi = sorted(glob.glob(os.path.join(self.path_main, "dataset", "*T1wRC0.0.info.txt")))
+        path_im1 = sorted(glob.glob(os.path.join(self.path_main, "dataset_compressed", "*T1wRC0.5.nii.gz")))
+        path_im2 = sorted(glob.glob(os.path.join(self.path_main, "dataset_compressed", "*T1wRC1.0.nii.gz")))
+        path_msk = sorted(glob.glob(os.path.join(self.path_main, "dataset_compressed", "*T1wRC0.0.msk.nii.gz")))
+        # path_roi = sorted(glob.glob(os.path.join(self.path_main, "dataset_compressed", "*T1wRC0.0.info.txt")))
         # path_dic = [{"img1": img1, "img2": img2, "msk": msk, "roi": roi} for img1, img2, msk, roi in zip(path_im1, path_im2, path_msk, path_roi)]
         path_dic = [{"img1": img1, "img2": img2, "msk": msk} for img1, img2, msk in zip(path_im1, path_im2, path_msk)]
         # select subset of data
@@ -204,9 +206,8 @@ class BrainLearn:
                 # forward pass
                 outputs = self.model(inputs)
                 # calculate loss and add it to epoch's loss
-                loss = self.loss_function(outputs, targets)
+                loss = self.loss_function(outputs * msk, targets * msk)
                 # Weight the loss and get mean value
-                loss = (loss * msk).mean()
                 epoch_loss += loss.mean().item()
                 # backpropagation
                 loss.backward()
@@ -222,6 +223,7 @@ class BrainLearn:
                 score = self.validate()
                 # store validation metrics in metrics array
                 self.scores[self._epoch] = score
+            if self._epoch == 0 or (self._epoch + 1) % self.delta_iteration_save == 0 or (self._epoch + 1) == self.max_iteration_trn:
                 # save model to disc
                 self.save_model_dictionary()
 
@@ -275,7 +277,7 @@ class BrainLearn:
                     prd_array = sitk.GetImageFromArray(sample.detach().cpu().numpy().squeeze())
                     img_array = sitk.GetImageFromArray(img.detach().cpu().numpy().squeeze())
                     tgt_array = sitk.GetImageFromArray(tgt.detach().cpu().numpy().squeeze())
-                    sitk.WriteImage(prd_array, os.path.join(self.path_main, self._path_results, f"{self.experiment} - tst.nii"))
+                    sitk.WriteImage(prd_array, os.path.join(self.path_main, self._path_results, f"{self.experiment} - tst.nii.gz"))
                     self.save_image_section_axial(prd_array, 100, "prd")
                     self.save_image_section_axial(tgt_array, 100, "tgt")
 

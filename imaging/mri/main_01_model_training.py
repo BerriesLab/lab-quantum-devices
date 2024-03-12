@@ -5,15 +5,16 @@ bl = BrainLearn()
 bl.path_main = "E:\\gd_synthesis"
 # Set parameters
 bl.set_device("cuda")
-bl.patch_size_trn = (128, 128, 128)
+bl.patch_size_trn = (32, 32, 32)
 bl.patch_size_val = bl.patch_size_trn
 bl.patch_size_tst = bl.patch_size_trn
 bl.patch_number = 20
 bl.batch_trn_size = 1
 bl.batch_tst_size = 1
 bl.batch_val_size = 1
-bl.max_iteration_trn = 10000
-bl.delta_iteration_trn = 100
+bl.max_iteration_trn = 1000
+bl.delta_iteration_trn = 10
+bl.delta_iteration_save = 100
 bl.batch_trn_size = 1
 # Build dataset
 bl.data_percentage = 1
