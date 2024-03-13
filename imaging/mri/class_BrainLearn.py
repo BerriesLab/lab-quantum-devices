@@ -84,7 +84,7 @@ class BrainLearn:
         monai.config.print_config()
 
     # ******************* TRANSFORMATION METHODS *******************
-    def compose_transforms_trn(self):
+    def compose_transforms_trn(self, augment=False):
         """Compose the transformation for the training dataset"""
         self.transforms_trn = Compose([
             LoadImageD(keys=["img1", "img2", "msk"]),

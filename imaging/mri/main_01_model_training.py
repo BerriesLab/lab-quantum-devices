@@ -5,7 +5,7 @@ bl = BrainLearn()
 bl.path_main = "E:\\gd_synthesis"
 # Set parameters
 bl.set_device("cuda")
-bl.patch_size_trn = (32, 32, 32)
+bl.patch_size_trn = (128, 128, 128)
 bl.patch_size_val = bl.patch_size_trn
 bl.patch_size_tst = bl.patch_size_trn
 bl.patch_number = 20
