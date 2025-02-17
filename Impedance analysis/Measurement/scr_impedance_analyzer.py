@@ -40,7 +40,7 @@ s_sweep_delay = 10
 # endregion USER input
 
 # region ----- Set or create current directory where to save files -----
-print("\n***** Measurement log *****")
+print("\n***** measurement log *****")
 path = main + "/" + chip + "/" + device + "/impedance analysis/"
 try:
     os.chdir(path)  # if path exists, then make it cwd
@@ -190,6 +190,6 @@ for idx, val in enumerate(bias):
     plt.pause(0.01)
 
 # fig.tight_layout()  # otherwise the right y-label is slightly clipped
-print("Measurement completed.")
+print("measurement completed.")
 
 plt.show()
